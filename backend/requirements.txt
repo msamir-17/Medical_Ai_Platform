@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-multipart
+scikit-learn
+pandas
+numpy
+joblib
+shap
+easyocr
+pymupdf
+transformers
+torch
+langchain
+langchain-community
+langchain-huggingface
+faiss-cpu
+sentence-transformers
