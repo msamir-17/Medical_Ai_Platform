@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import diabetes_routes, report_routes
+from app.routers import diabetes_routes, report_routes , chat_routes
 # 1. Initialize the App
 app = FastAPI(
     title="Medical AI Platform API",
@@ -21,7 +21,7 @@ app.add_middleware(
 
 app.include_router(diabetes_routes.router, prefix="/predict", tags=["Diabetes"])
 app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])
-
+app.include_router(chat_routes.router, prefix="/chat", tags=["AI Chatbot"])
 
 # 3. Health Check Endpoint (Industry Standard)
 @app.get("/health")

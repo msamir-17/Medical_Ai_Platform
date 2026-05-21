@@ -4,6 +4,7 @@ import shutil
 import os
 from app.services.ocr_service import ocr_service
 from app.services.nlp_service import nlp_service
+from app.services.rag_service import rag_service
 
 router = APIRouter()
 
@@ -27,18 +28,32 @@ async def upload_report(file: UploadFile = File(...)):
         # 3. Process with OCR (The Reader)
         raw_text = ocr_service.extract_text(file_path)
         
+
+        print(f"\n🔍 DEBUG: AI saw this text in the file: {raw_text}\n")
+
+
         # 4. Process with Regex (The Strict Detective)
         structured_data = ocr_service.extract_medical_values(raw_text)
 
         # 5. Process with NLP (The Smart Doctor) - NEW STEP
         medical_entities = nlp_service.extract_entities(raw_text)
 
+        # 5. Process with NLP
+        medical_entities = nlp_service.extract_entities(raw_text)
+
+        # 6. Index for Chatbot (Memory) - NEW STEP
+        # For now, we use a dummy user_id "123"
+        rag_service.index_report(raw_text, user_id="123") 
+
         return {
             "filename": file.filename,
             "extracted_values": structured_data,
             "detected_entities": medical_entities, # NEW DATA
-            "raw_text_preview": raw_text[:300] + "..."
+            "message": "Report analyzed and added to chatbot memory!"
         }
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR Processing failed: {str(e)}")
+    
+
+    
