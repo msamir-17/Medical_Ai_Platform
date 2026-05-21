@@ -4,7 +4,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import os
+from dotenv import load_dotenv
 
+
+load_dotenv()
 class RAGService:
     def __init__(self):
         # 1. Load the 'Researcher' (Embeddings)
@@ -14,27 +17,34 @@ class RAGService:
         self.vector_db_path = "vector_stores"
         os.makedirs(self.vector_db_path, exist_ok=True)
 
+        # 1. Access the API Key safely from Environment Variables
+        api_key = os.getenv("GROQ_API_KEY")
+
         # 1. Initialize Groq LLM (Put your API Key in .env later)
         # Model 'llama3-8b-8192' is free and very smart
         self.llm = ChatGroq(
             temperature=0, 
-            groq_api_key="APKA_GROQ_API_KEY_YAHAN_DALEIN", 
+            groq_api_key="api_key", 
             model_name="llama3-8b-8192"
         )
     def query_report(self, question: str, user_id: str):
         user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
         if not os.path.exists(user_db_path):
-            return "No report found."
+            return "No report found. Please upload a report first"
 
         db = FAISS.load_local(user_db_path, self.embeddings, allow_dangerous_deserialization=True)
+
         relevant_docs = db.similarity_search(question, k=3)
         context = "\n".join([doc.page_content for doc in relevant_docs])
 
         # 2. Industry Standard: The Prompt Template
         # Hum LLM ko 'Acting' sikhate hain
         prompt = ChatPromptTemplate.from_template("""
-        You are a professional Medical Assistant. Answer the question based ONLY on the provided context.
-        If the answer is not in the context, say "I don't find this information in the report."
+        You are an AI Medical Assistant. Use the provided context to answer the user's question.
+        Guidelines:
+        1. Be concise and professional.
+        2. If the answer is not in the context, say: "This information is not available in the uploaded report."
+        3. Do not make up medical facts.
         
         Context: {context}
         Question: {question}
