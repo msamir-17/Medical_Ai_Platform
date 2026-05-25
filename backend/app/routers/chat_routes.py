@@ -11,8 +11,15 @@ class ChatRequest(BaseModel):
 @router.post("/query")
 async def ask_question(request: ChatRequest):
     try:
-        # Search the report memory
-        answer_context = rag_service.query_report(request.question, request.user_id)
-        return {"answer_context": answer_context}
+        # Get the dictionary from the service
+        result = rag_service.query_report(request.question, request.user_id)
+        
+        # Now this will not crash!
+        return {
+            "answer": result.get("answer", "No answer generated"),
+            "evidence": result.get("sources", "No evidence found")
+        }
     except Exception as e:
+        # Debugging ke liye terminal mein error print karein
+        print(f"❌ Chat Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

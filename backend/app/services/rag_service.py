@@ -29,8 +29,12 @@ class RAGService:
         )
     def query_report(self, question: str, user_id: str):
         user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
+
         if not os.path.exists(user_db_path):
-            return "No report found. Please upload a report first"
+            return {
+                "answer": "No report found. Please upload a PDF first.",
+                "sources": ""
+            }
 
         db = FAISS.load_local(user_db_path, self.embeddings, allow_dangerous_deserialization=True)
 
@@ -39,6 +43,9 @@ class RAGService:
 
         # 2. Industry Standard: The Prompt Template
         # Hum LLM ko 'Acting' sikhate hain
+
+
+
         prompt = ChatPromptTemplate.from_template("""
         You are an AI Medical Assistant. Use the provided context to answer the user's question.
         Guidelines:
@@ -53,10 +60,14 @@ class RAGService:
         """)
 
         # 3. Chain create karein aur answer generate karein
+
         chain = prompt | self.llm
         response = chain.invoke({"context": context, "question": question})
         
-        return response.content
+        return {
+            "answer": response.content,
+            "sources": context
+        }
 
     def index_report(self, text: str, user_id: str):
         """
