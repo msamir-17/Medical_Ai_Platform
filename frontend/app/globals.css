@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* This is the new Tailwind v4 way to define your theme variables */
+@theme {
+  --color-primary-500: #6366F1;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  
+  --color-bg-primary: #FFFFFF;
+  --color-text-primary: #111827;
+  
+  /* Dark Mode Variants */
+  --color-dark-bg: #0F1117;
+  --color-dark-text: #F9FAFB;
+}
+
+/* Base styles using our theme variables */
+@layer base {
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: background-color 0.3s ease;
+  }
+
+  /* Simple logic for Dark Mode */
+  [data-theme='dark'] body {
+    background-color: var(--color-dark-bg);
+    color: var(--color-dark-text);
+  }
+}
