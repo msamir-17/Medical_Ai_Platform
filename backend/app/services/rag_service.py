@@ -6,28 +6,35 @@ from langchain_core.prompts import ChatPromptTemplate
 import os
 from dotenv import load_dotenv
 
-
 load_dotenv()
+
 class RAGService:
     def __init__(self):
-        # 1. Load the 'Researcher' (Embeddings)
-        print("Loading RAG Embedding Model...")
+        print("Loading RAG Service Components...")
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=250)
         self.vector_db_path = "vector_stores"
         os.makedirs(self.vector_db_path, exist_ok=True)
 
-        # 1. Access the API Key safely from Environment Variables
+        # FIX: Passing the variable api_key, not the string "api_key"
         api_key = os.getenv("GROQ_API_KEY")
 
-        # 1. Initialize Groq LLM (Put your API Key in .env later)
-        # Model 'llama3-8b-8192' is free and very smart
         self.llm = ChatGroq(
             temperature=0, 
-            groq_api_key="api_key", 
-            model_name="llama3-8b-8192"
+            groq_api_key=api_key, 
+            model_name="llama-3.1-8b-instant"
         )
+
+    def index_report(self, text: str, user_id: str):
+        """Chunks and stores the report in FAISS."""
+        chunks = self.text_splitter.split_text(text)
+        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
+        db = FAISS.from_texts(chunks, self.embeddings)
+        db.save_local(user_db_path)
+        return len(chunks)
+
     def query_report(self, question: str, user_id: str):
+        """Retrieves context and generates an AI answer."""
         user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
 
         if not os.path.exists(user_db_path):
@@ -36,15 +43,12 @@ class RAGService:
                 "sources": ""
             }
 
+        # Load the index
         db = FAISS.load_local(user_db_path, self.embeddings, allow_dangerous_deserialization=True)
 
+        # Search for top 3 matches
         relevant_docs = db.similarity_search(question, k=3)
         context = "\n".join([doc.page_content for doc in relevant_docs])
-
-        # 2. Industry Standard: The Prompt Template
-        # Hum LLM ko 'Acting' sikhate hain
-
-
 
         prompt = ChatPromptTemplate.from_template("""
         You are an AI Medical Assistant. Use the provided context to answer the user's question.
@@ -59,8 +63,6 @@ class RAGService:
         Answer:
         """)
 
-        # 3. Chain create karein aur answer generate karein
-
         chain = prompt | self.llm
         response = chain.invoke({"context": context, "question": question})
         
@@ -68,41 +70,6 @@ class RAGService:
             "answer": response.content,
             "sources": context
         }
-
-    def index_report(self, text: str, user_id: str):
-        """
-        Report text ko chunks mein tod kar Vector DB mein save karna.
-        """
-        chunks = self.text_splitter.split_text(text)
-        
-        # Har user ka apna folder hoga (Industry Standard for Privacy)
-        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
-        
-        # Create Vector Store
-        db = FAISS.from_texts(chunks, self.embeddings)
-        db.save_local(user_db_path)
-        
-        return len(chunks)
-
-    def query_report(self, question: str, user_id: str):
-        """
-        Database se sawaal ka jawab dhoondna.
-        """
-        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
-        
-        if not os.path.exists(user_db_path):
-            return "No report found. Please upload a report first."
-
-        # Load the user's specific memory
-        db = FAISS.load_local(user_db_path, self.embeddings, allow_dangerous_deserialization=True)
-        
-        # Dhoondna: Sawaal se milte-julte top 3 chunks
-        relevant_docs = db.similarity_search(question, k=3)
-        context = "\n".join([doc.page_content for doc in relevant_docs])
-
-        # Note: Abhi hum sirf 'Context' return kar rahe hain. 
-        # Agle step mein hum ise Claude/GPT API ko bhejenge 'Generation' ke liye.
-        return context
 
 # Singleton instance
 rag_service = RAGService()

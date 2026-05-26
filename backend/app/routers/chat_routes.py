@@ -11,15 +11,16 @@ class ChatRequest(BaseModel):
 @router.post("/query")
 async def ask_question(request: ChatRequest):
     try:
-        # Get the dictionary from the service
         result = rag_service.query_report(request.question, request.user_id)
         
-        # Now this will not crash!
+        # Safe check: In industry, we always check the type of our result
+        if not isinstance(result, dict):
+             return {"answer": str(result), "evidence": "Raw format detected"}
+        
         return {
-            "answer": result.get("answer", "No answer generated"),
-            "evidence": result.get("sources", "No evidence found")
+            "answer": result.get("answer", "No response"),
+            "evidence": result.get("sources", "")
         }
     except Exception as e:
-        # Debugging ke liye terminal mein error print karein
         print(f"❌ Chat Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")

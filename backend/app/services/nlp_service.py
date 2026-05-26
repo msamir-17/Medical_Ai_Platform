@@ -24,29 +24,28 @@ class NLPService:
             "symptoms": []
         }
 
-        current_word = ""
-        current_label = ""
+        if not entities: return results # Safe check for empty results
 
+        temp_entities = []
 
         for ent in entities:
+            if ent['word'].startswith("##") and temp_entities:
+                temp_entities[-1]['word'] += ent['word'].replace("##", "")
+            else:
+                temp_entities.append(ent)
+
+        for ent in temp_entities:
 
             label = ent['entity_group']
             word = ent['word']
+            if len(word) < 4: continue # Skip tiny fragments, industry practice
 
-
-            # If word starts with ##, it belongs to the previous word
-            if word.startswith("##"):
-                current_word += word.replace("##", "")
-            else:
-                if current_word: # Save the previous finished word
-                    self._map_to_results(current_word, current_label, results)
-                current_word = word
-                current_label = label
-        
-        # Save the last word
-        if current_word:
-            self._map_to_results(current_word, current_label, results)
-
+            if label == "Disease_disorder":
+                results["diseases"].append(word)
+            elif label == "Sign_symptom":
+                results["symptoms"].append(word)
+            elif label == "Medication":
+                results["medications"].append(word)
             
         
         # Remove duplicates (Industry practice)
