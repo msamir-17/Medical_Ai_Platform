@@ -1,12 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.database import engine, Base
+from app.models import report # Import your model
 from app.routers import diabetes_routes, report_routes , chat_routes
+
+
+# This looks at all models that inherit from 'Base' and creates tables in Supabase
+Base.metadata.create_all(bind=engine)
+
+
 # 1. Initialize the App
 app = FastAPI(
     title="Medical AI Platform API",
     description="Backend for AI-powered medical record analysis",
     version="1.0.0"
 )
+
 
 # 2. Configure CORS (Cross-Origin Resource Sharing)
 # This allows your Next.js frontend (port 3000) to talk to this API (port 8000)
