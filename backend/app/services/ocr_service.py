@@ -31,6 +31,7 @@ class OCRService:
 
             # Higher quality rendering
             pix = page.get_pixmap(dpi=300)
+            # pix = page.get_pixmap(dpi=150)
 
             img_bytes = pix.tobytes("png")
 
