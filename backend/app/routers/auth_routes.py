@@ -5,9 +5,14 @@ from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, Token
 from app.services.auth_service import auth_service
 import uuid
+import os
+import resend
+from dotenv import load_dotenv
 
 router = APIRouter()
+load_dotenv() # Load environment variables from .env file
 
+resend.api_key = os.getenv("RESEND_API_KEY")
 @router.post("/register")
 def register(user_data: UserRegister, db: Session = Depends(get_db)):
     # 1. Check if user exists
@@ -30,11 +35,33 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     
-    # 3. Industry Logic: Yahan se ek real email jayega (Humein SMTP setup chahiye hoga)
-    # Abhi ke liye hum terminal mein token print karenge
-    print(f"📧 EMAIL SENT TO {user_data.email}: Verify using token {v_token}")
+
+    # 2. REAL WORLD LOGIC: Send the Email via Resend
+    try:
+        # Note: Resend's free tier only lets you send to your OWN registered email
+        # until you add a custom domain. For testing, this is perfect!
+        params = {
+            "from": "MedicalAI <onboarding@resend.dev>",
+            "to": [user_data.email],
+            "subject": "Verify your Medical AI Account",
+            "html": f"""
+                <h1>Welcome to MediAI!</h1>
+                <p>Thank you for joining our secure health platform.</p>
+                <p>Please use the following token to verify your account:</p>
+                <strong style="font-size: 20px; color: #4F46E5;">{v_token}</strong>
+                <br/><br/>
+                <p>Or click this link (for future frontend):</p>
+                <a href="http://localhost:3000/verify-email?token={v_token}">Verify Account</a>
+            """
+        }
+        resend.Emails.send(params)
+        print(f"✅ Real Email sent successfully to {user_data.email}")
+
+    except Exception as e:
+        print(f"❌ Resend Error: {e}")
+        # We don't crash the app if email fails in dev
     
-    return {"message": "Registration successful. Please check your email for verification link."}
+    return {"message": "Registration successful. Please check your real inbox!"}
 
 @router.post("/login", response_model=Token)
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
