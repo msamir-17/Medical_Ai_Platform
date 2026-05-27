@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.models import report # Import your model
+from app.models import report, user  # Import your models
 from app.routers import diabetes_routes, report_routes , chat_routes
 
 

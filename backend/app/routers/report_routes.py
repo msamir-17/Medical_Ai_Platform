@@ -1,10 +1,15 @@
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException ,Depends
 import shutil
 import os
 from app.services.ocr_service import ocr_service
 from app.services.nlp_service import nlp_service
 from app.services.rag_service import rag_service
+from sqlalchemy.orm import Session
+import uuid
+from app.database import get_db
+from app.models.report import Report
+
 
 router = APIRouter()
 
@@ -13,46 +18,61 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/upload")
-async def upload_report(file: UploadFile = File(...)):
+async def upload_report(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db) # <--- DB connection mangwaya
+                        
+    ):
+
     # 1. Basic Validation
     if not file.filename.endswith(('.pdf', '.png', '.jpg', '.jpeg')):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload PDF or Image.")
 
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+ # 1. Unique Filename banana (Conflict se bachne ke liye)
+    file_id = str(uuid.uuid4())
+    ext = os.path.splitext(file.filename)[1]
+    safe_filename = f"{file_id}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
     try:
         # 2. Save file locally
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # 3. Process with OCR (The Reader)
+        # 3. AI Pipeline (OCR -> NLP -> RAG)
         raw_text = ocr_service.extract_text(file_path)
+        extracted_values = ocr_service.extract_medical_values(raw_text)
+        medical_entities = nlp_service.extract_entities(raw_text)
         
-
-        print(f"\n🔍 DEBUG: AI saw this text in the file: {raw_text}\n")
-
-
-        # 4. Process with Regex (The Strict Detective)
-        structured_data = ocr_service.extract_medical_values(raw_text)
-
-        # 5. Process with NLP (The Smart Doctor) - NEW STEP
-        medical_entities = nlp_service.extract_entities(raw_text)
-
-        # 5. Process with NLP
-        medical_entities = nlp_service.extract_entities(raw_text)
-
-        # 6. Index for Chatbot (Memory) - NEW STEP
-        # For now, we use a dummy user_id "123"
+        # Chatbot memory mein dalna
         rag_service.index_report(raw_text, user_id="123") 
 
+        # 4. DATABASE MEIN SAVE KARNA (The Professional Way)
+        new_report = Report(
+            id=file_id,
+            user_id="123", # Abhi ke liye hardcoded
+            filename=file.filename,
+            extracted_text=raw_text,
+            detected_entities=medical_entities,
+            extracted_values=extracted_values,
+            risk_score=None # Baad mein ML model se aayega
+        )
+        
+        db.add(new_report)   # Data ko queue mein dalo
+        db.commit()          # Supabase mein "Save" button dabao
+        db.refresh(new_report) # Naya data wapas read karo (IDs confirm karne ke liye)
+
+        
+
         return {
-            "filename": file.filename,
-            "extracted_values": structured_data,
-            "detected_entities": medical_entities, # NEW DATA
-            "message": "Report analyzed and added to chatbot memory!"
+            "id": new_report.id,
+            "filename": new_report.filename,
+            "message": "Report saved successfully to Supabase!"
         }
     
     except Exception as e:
+        db.rollback() # Agar error aaye toh database ko purane state pe le jao
+        print(f"❌ Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"OCR Processing failed: {str(e)}")
     
 
