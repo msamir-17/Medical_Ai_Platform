@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.models import report, user  # Import your models
-from app.routers import diabetes_routes, report_routes , chat_routes
+from app.routers import diabetes_routes, report_routes , chat_routes , auth_routes 
+
+
+
 
 
 # This looks at all models that inherit from 'Base' and creates tables in Supabase
@@ -27,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+app.include_router(auth_routes.router, prefix="/auth", tags=["Authentication"])
 app.include_router(diabetes_routes.router, prefix="/predict", tags=["Diabetes"])
 app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])
 app.include_router(chat_routes.router, prefix="/chat", tags=["AI Chatbot"])
