@@ -94,3 +94,23 @@ async def get_report_stats(db: Session = Depends(get_db)):
         "last_upload": latest_report.created_at if latest_report else None,
         "latest_filename": latest_report.filename if latest_report else "No reports yet"
     }    
+
+@router.get("") # Ya phr @router.get("/") 
+async def get_all_reports(db: Session = Depends(get_db)):
+    """Fetches the full list of reports for the gallery."""
+    user_id = "123" # Matching your stats logic
+    
+    # Supabase se saari reports uthao
+    reports = db.query(Report).filter(Report.user_id == user_id).all()
+    
+    return reports
+
+@router.get("/{report_id}")
+async def get_report_details(report_id: str, db: Session = Depends(get_db)):
+    """Fetches full details of a specific medical report."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+        
+    return report

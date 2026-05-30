@@ -13,4 +13,19 @@ export const reportService = {
     });
     return response.data;
   },
+
+    // NEW: Function to get all reports
+  getAll: async () => {
+    const response = await api.get('/reports/');
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await api.get(`/reports/${id}`);
+    return response.data;
+  }
+
 };
+
+// Add this inside the reportService object
+  
