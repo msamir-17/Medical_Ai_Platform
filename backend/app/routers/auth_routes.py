@@ -77,18 +77,21 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     access_token = auth_service.create_access_token(data={"sub": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.get("/verify-email/{token}")
+# response_model=Token add karein taaki ye token return kar sake
+@router.get("/verify-email/{token}", response_model=Token)
 def verify_email(token: str, db: Session = Depends(get_db)):
-    # 1. Dhoondo ki ye token kis user ka hai
+    # 1. User dhoondo
     user = db.query(User).filter(User.verification_token == token).first()
     
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     
-    # 2. User ko activate karo
+    # 2. Activate karo
     user.is_verified = True
-    user.verification_token = None # Token delete kar do (Security best practice)
-    
+    user.verification_token = None
     db.commit()
+
+    # 3. AUTO-LOGIN LOGIC: Verification ke saath hi Token de do
+    access_token = auth_service.create_access_token(data={"sub": user.id})
     
-    return {"message": "Email verified successfully! You can now login."}
+    return {"access_token": access_token, "token_type": "bearer"}

@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { authService } from '@/features/auth/authService';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const setToken = useAuthStore((state) => state.setToken);
   const token = searchParams.get('token');
   
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -15,10 +17,20 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (token) {
       authService.verifyEmail(token)
-        .then(() => setStatus('success'))
+        .then((data) => {
+          // 1. Token ko store mein save karo
+          setToken(data.access_token);
+          setStatus('success');
+          
+          // 2. 2 second ka wait karo (taaki user success message dekh sake)
+          // Phir direct dashboard!
+          setTimeout(() => {
+            router.push('/dashboard');
+          }, 2000);
+        })
         .catch(() => setStatus('error'));
     }
-  }, [token]);
+  }, [token, setToken, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">

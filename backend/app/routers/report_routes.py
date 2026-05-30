@@ -76,4 +76,21 @@ async def upload_report(
         raise HTTPException(status_code=500, detail=f"OCR Processing failed: {str(e)}")
     
 
+
+@router.get("/stats")
+async def get_report_stats(db: Session = Depends(get_db)):
+    """Provides summary statistics for the dashboard."""
+    # For now, we still use '123'. 
+    # (In the next session, I'll show you how to use the JWT token to get the REAL user ID).
+    user_id = "123"
     
+    total_reports = db.query(Report).filter(Report.user_id == user_id).count()
+    
+    # Get the latest report to show 'Recent Activity'
+    latest_report = db.query(Report).filter(Report.user_id == user_id).order_by(Report.created_at.desc()).first()
+    
+    return {
+        "total_reports": total_reports,
+        "last_upload": latest_report.created_at if latest_report else None,
+        "latest_filename": latest_report.filename if latest_report else "No reports yet"
+    }    

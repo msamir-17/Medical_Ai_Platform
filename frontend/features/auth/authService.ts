@@ -15,7 +15,8 @@ export const authService = {
   },
 
   // 3. Logic for Verification
-  verifyEmail: async (token: string) => {
+  // Return type change karke AuthResponse kar diya
+  verifyEmail: async (token: string): Promise<AuthResponse> => {
     const response = await api.get(`/auth/verify-email/${token}`);
     return response.data;
   }
