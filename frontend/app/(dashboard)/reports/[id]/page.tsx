@@ -6,8 +6,14 @@ import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ReportDetailPage() {
-  const { id } = useParams();
-  const { data: report, isLoading } = useReport(id as string);
+
+  const params = useParams();
+  
+  // Next.js [id] folder ke hisaab se params.id milega
+  const reportId = params.id as string; 
+
+  const { data: report, isLoading, error } = useReport(reportId);
+
 
   if (isLoading) {
     return (
@@ -17,6 +23,17 @@ export default function ReportDetailPage() {
       </div>
     );
   }
+
+
+    if (error || !report) {
+    return (
+      <div className="p-10 text-center">
+        <h1 className="text-xl font-bold text-red-500">Report Not Found</h1>
+        <p>Please go back to the vault and try again.</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-20">

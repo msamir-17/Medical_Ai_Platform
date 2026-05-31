@@ -75,10 +75,8 @@ async def upload_report(
         print(f"❌ Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"OCR Processing failed: {str(e)}")
     
-
-
 @router.get("/stats")
-async def get_report_stats(db: Session = Depends(get_db)):
+async def get_report_stats(db: Session = Depends(get_db)):  
     """Provides summary statistics for the dashboard."""
     # For now, we still use '123'. 
     # (In the next session, I'll show you how to use the JWT token to get the REAL user ID).
@@ -95,7 +93,7 @@ async def get_report_stats(db: Session = Depends(get_db)):
         "latest_filename": latest_report.filename if latest_report else "No reports yet"
     }    
 
-@router.get("") # Ya phr @router.get("/") 
+@router.get("/") # Ya phr @router.get("/") 
 async def get_all_reports(db: Session = Depends(get_db)):
     """Fetches the full list of reports for the gallery."""
     user_id = "123" # Matching your stats logic
@@ -107,6 +105,9 @@ async def get_all_reports(db: Session = Depends(get_db)):
 
 @router.get("/{report_id}")
 async def get_report_details(report_id: str, db: Session = Depends(get_db)):
+
+    print(f"🔍 DEBUG: Searching for Report ID: {report_id}")
+
     """Fetches full details of a specific medical report."""
     report = db.query(Report).filter(Report.id == report_id).first()
     

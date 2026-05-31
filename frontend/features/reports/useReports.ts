@@ -27,6 +27,6 @@ export function useReport(id: string) {
   return useQuery({
     queryKey: ['report', id],
     queryFn: () => reportService.getById(id),
-    enabled: !!id, // Only run if ID exists
+    enabled: !!id && id !== 'undefined', 
   });
 }
