@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuthStore } from '@/store/authStore';
 
 // const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -21,5 +22,14 @@ api.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+api.interceptors.request.use((config) => {
+  // Access the token from our Zustand store
+  const token = useAuthStore.getState().token;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 export default api;

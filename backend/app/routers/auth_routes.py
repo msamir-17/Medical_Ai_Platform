@@ -7,10 +7,19 @@ from app.services.auth_service import auth_service
 import uuid
 import os
 import resend
+from jose import jwt, JWTError
+from fastapi.security import OAuth2PasswordBearer
+
 from dotenv import load_dotenv
+
 
 router = APIRouter()
 load_dotenv() # Load environment variables from .env file
+
+# Secret key from your .env
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 @router.post("/register")
@@ -95,3 +104,20 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     access_token = auth_service.create_access_token(data={"sub": user.id})
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Extracts user_id from the JWT Token."""
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+        return user_id # This returns the REAL UUID of the logged-in user
+    except JWTError:
+        raise credentials_exception

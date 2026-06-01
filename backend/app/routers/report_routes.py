@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.report import Report
 # from app.services.diabetes_service import DiabetesService 
 from app.services.diabetes_service import diabetes_service
+from app.routers.auth_routes import get_current_user
 
 
 
@@ -23,7 +24,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload")
 async def upload_report(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db) # <--- DB connection mangwaya
+    db: Session = Depends(get_db), # <--- DB connection mangwaya
+    current_user_id: str = Depends(get_current_user)
    ):
 
     # 1. Basic Validation
@@ -89,12 +91,12 @@ async def upload_report(
 
 
         # Chatbot memory mein dalna
-        rag_service.index_report(raw_text, user_id="123") 
+        rag_service.index_report(raw_text, user_id=current_user_id) 
 
         # 4. DATABASE MEIN SAVE KARNA (The Professional Way)
         new_report = Report(
             id=file_id,
-            user_id="123", # Abhi ke liye hardcoded
+            user_id=current_user_id, # Abhi ke liye hardcoded
             filename=file.filename,
             extracted_text=raw_text,
             detected_entities=medical_entities,
@@ -123,11 +125,11 @@ async def upload_report(
         raise HTTPException(status_code=500, detail=f"OCR Processing failed: {str(e)}")
     
 @router.get("/stats")
-async def get_report_stats(db: Session = Depends(get_db)):  
+async def get_report_stats(db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):  
     """Provides summary statistics for the dashboard."""
     # For now, we still use '123'. 
     # (In the next session, I'll show you how to use the JWT token to get the REAL user ID).
-    user_id = "123"
+    user_id = current_user_id
     
     total_reports = db.query(Report).filter(Report.user_id == user_id).count()
     
@@ -141,9 +143,9 @@ async def get_report_stats(db: Session = Depends(get_db)):
     }    
 
 @router.get("/") # Ya phr @router.get("/") 
-async def get_all_reports(db: Session = Depends(get_db)):
+async def get_all_reports(db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):
     """Fetches the full list of reports for the gallery."""
-    user_id = "123" # Matching your stats logic
+    user_id = current_user_id # Matching your stats logic
     
     # Supabase se saari reports uthao
     reports = db.query(Report).filter(Report.user_id == user_id).all()
@@ -151,7 +153,7 @@ async def get_all_reports(db: Session = Depends(get_db)):
     return reports
 
 @router.get("/{report_id}")
-async def get_report_details(report_id: str, db: Session = Depends(get_db)):
+async def get_report_details(report_id: str, db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):
 
     print(f"🔍 DEBUG: Searching for Report ID: {report_id}")
 
