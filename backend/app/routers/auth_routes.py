@@ -13,8 +13,9 @@ from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 
 
-router = APIRouter()
 load_dotenv() # Load environment variables from .env file
+
+router = APIRouter()
 
 # Secret key from your .env
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -67,8 +68,16 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         print(f"✅ Real Email sent successfully to {user_data.email}")
 
     except Exception as e:
-        print(f"❌ Resend Error: {e}")
-        # We don't crash the app if email fails in dev
+        # RESUME LOGIC: Sandbox limit handle karne ke liye
+        print(f"❌ Resend Error for {user_data.email}: {e}")
+        
+        # Professional Development Fallback:
+        # Hum terminal mein wahi link print kar rahe hain jo email mein jana tha.
+        # Is link par click karte hi aapka auto-login wala logic trigger ho jayega!
+        print("\n" + "="*50)
+        print("🛠️ DEVELOPMENT MAGIC LINK (Click to verify without email):")
+        print(f"http://localhost:3000/verify-email?token={v_token}")
+        print("="*50 + "\n")
     
     return {"message": "Registration successful. Please check your real inbox!"}
 
