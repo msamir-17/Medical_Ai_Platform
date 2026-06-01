@@ -56,18 +56,34 @@ async def upload_report(
             report_type = "Diabetes Screening"
 
          # 2. CONDITIONAL RISK (Feature Completeness Check)
+         # SHAP values ke liye placeholder
         calculated_risk = None
+        calculated_risk_values = []
+
         if "glucose" in extracted_values:
+            print(f"🔍 DEBUG: Glucose found ({extracted_values['glucose']}). Starting prediction...")
             try:
-                # We use predict_service (the instance we exported)
+                # IMPORTANT: 'diabetes_service' (Small 'd') use karna hai, jo instance hai
                 result = diabetes_service.predict_diabetes({
-                    "Pregnancies": 0, "Glucose": float(extracted_values["glucose"]),
-                    "BloodPressure": 70, "SkinThickness": 20, "Insulin": 79,
-                    "BMI": 25, "DiabetesPedigreeFunction": 0.5, "Age": 30
+                    "Pregnancies": 0, 
+                    "Glucose": float(extracted_values["glucose"]),
+                    "BloodPressure": 70, 
+                    "SkinThickness": 20, 
+                    "Insulin": 79,
+                    "BMI": 25, 
+                    "DiabetesPedigreeFunction": 0.5, 
+                    "Age": 30
                 })
                 calculated_risk = result["risk_score"]
-            except:
+                calculated_risk_values = result["shap_explanation"]
+                print(f"✅ DEBUG: Prediction Success! Score: {calculated_risk}")
+
+            except Exception as e:
+                # Yeh line aapko terminal mein batayegi ki asli problem kya hai
+                print(f"❌ DEBUG: Prediction Failed! Error: {str(e)}")
                 calculated_risk = None
+        else:
+            print("⚠️ DEBUG: No 'glucose' key found in extracted_values. Skipping prediction.") 
 
         patient_metadata = rag_service.extract_patient_metadata(raw_text)
 
@@ -85,6 +101,7 @@ async def upload_report(
             extracted_values=extracted_values,
             risk_score=calculated_risk, # Baad mein ML model se aayega
             patient_info=patient_metadata,
+            shap_values=calculated_risk_values,
             report_type=report_type 
         )
         

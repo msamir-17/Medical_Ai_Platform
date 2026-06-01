@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.diabetes_service import diabetes_service
 
+
 router = APIRouter()
 
 # Data Validation Schema (Industry Standard)

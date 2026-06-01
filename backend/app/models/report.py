@@ -31,3 +31,5 @@ class Report(Base):
     report_type = Column(String, default="General")
 
     patient_info = Column(JSON, default={})
+
+    shap_values = Column(JSON, default=[])

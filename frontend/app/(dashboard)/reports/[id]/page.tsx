@@ -4,6 +4,7 @@ import { useReport } from '@/features/reports/useReports';
 import { useParams } from 'next/navigation';
 import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
+import { ShapBarChart } from '@/components/risk/ShapBarChart';
 
 export default function ReportDetailPage() {
 
@@ -172,6 +173,26 @@ export default function ReportDetailPage() {
               {report.risk_score !== null ? `${report.risk_score}%` : "STABLE"}
             </div>
           </div>
+
+          {/* THE MAGIC CHART SECTION */}
+          {report.shap_values && report.shap_values.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-2 text-center">
+                Risk Factor Analysis
+              </h3>
+              <p className="text-[10px] text-slate-400 text-center mb-6 px-4">
+                Red bars increase risk, Green bars decrease it.
+              </p>
+              
+              {/* Hum wahi chart component use kar rahe hain jo humne pehle banaya tha */}
+              <ShapBarChart data={report.shap_values} />
+              
+              <div className="mt-6 pt-6 border-t border-slate-50 text-[11px] text-slate-500 leading-relaxed italic">
+                *This analysis is based on the Pima Indians Diabetes research model.
+              </div>
+            </div>
+          )}
+
         </aside>
       </div>
     </div>
