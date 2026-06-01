@@ -71,5 +71,30 @@ class RAGService:
             "sources": context
         }
 
+
+    def extract_patient_metadata(self, text: str):
+        """Uses Llama 3.1 to extract structured patient details from raw text."""
+        prompt = ChatPromptTemplate.from_template("""
+        Extract patient details from this medical text in JSON format. 
+        Fields: name, age, gender, patient_id, doctor_name, hospital_name, sample_type.
+        If a field is missing, use "N/A". Return ONLY the raw JSON.
+
+        Text: {text}
+        """)
+        
+        chain = prompt | self.llm
+        response = chain.invoke({"text": text[:2000]}) # Sending only first 2k chars for speed
+        
+        # Simple cleanup to ensure valid JSON
+        try:
+            import json
+            # Finding the JSON block in case LLM adds extra text
+            start = response.content.find('{')
+            end = response.content.rfind('}') + 1
+            return json.loads(response.content[start:end])
+        except:
+            return {"name": "Unknown", "age": "N/A"}
+
+
 # Singleton instance
 rag_service = RAGService()

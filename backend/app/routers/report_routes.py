@@ -69,7 +69,9 @@ async def upload_report(
             except:
                 calculated_risk = None
 
-        
+        patient_metadata = rag_service.extract_patient_metadata(raw_text)
+
+
         # Chatbot memory mein dalna
         rag_service.index_report(raw_text, user_id="123") 
 
@@ -82,6 +84,7 @@ async def upload_report(
             detected_entities=medical_entities,
             extracted_values=extracted_values,
             risk_score=calculated_risk, # Baad mein ML model se aayega
+            patient_info=patient_metadata,
             report_type=report_type 
         )
         

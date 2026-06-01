@@ -29,3 +29,5 @@ class Report(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     report_type = Column(String, default="General")
+
+    patient_info = Column(JSON, default={})

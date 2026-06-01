@@ -61,6 +61,64 @@ export default function ReportDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           
+
+          {/* Patient Profile Card */}
+          <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm overflow-hidden relative">
+            {/* Background Decoration */}
+            <div className="absolute top-0 right-0 p-4 opacity-5">
+              <Activity size={120} />
+            </div>
+
+            <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Patient Identity</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+              {/* Col 1: Name & ID */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-slate-500 font-bold uppercase">Patient Name</p>
+                  <p className="text-xl font-black text-indigo-600 uppercase italic">
+                    {report.patient_info?.name || "Unknown"}
+                  </p>
+                </div>
+                <div className="flex gap-10">
+                  <div>
+                    <p className="text-xs text-slate-500 font-bold uppercase">Patient ID</p>
+                    <p className="font-bold text-slate-900">{report.patient_info?.patient_id || "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 font-bold uppercase">Gender</p>
+                    <p className="font-bold text-slate-900">{report.patient_info?.gender || "N/A"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Col 2: Age & Doctor */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-slate-500 font-bold uppercase">Age</p>
+                  <p className="text-lg font-bold text-slate-900">{report.patient_info?.age || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-bold uppercase">Referring Doctor</p>
+                  <p className="font-bold text-slate-900">{report.patient_info?.doctor_name || "N/A"}</p>
+                </div>
+              </div>
+
+              {/* Col 3: Hospital & Sample */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-slate-500 font-bold uppercase">Facility / Hospital</p>
+                  <p className="font-bold text-slate-900">{report.patient_info?.hospital_name || "N/A"}</p>
+                </div>
+                <div className="p-3 bg-indigo-50 rounded-2xl inline-block">
+                  <p className="text-[10px] text-indigo-400 font-black uppercase">Sample Source</p>
+                  <p className="text-xs font-bold text-indigo-700">{report.patient_info?.sample_type || "N/A"}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+
           {/* 3. NEW: Laboratory Values Grid */}
           <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
@@ -84,29 +142,34 @@ export default function ReportDetailPage() {
           </section>
 
           {/* 4. Detected Entities Section (Keep your existing pills code here) */}
-          <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+          {/* <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-6">Medical Insights</h2>
               <div className="text-slate-400 text-sm font-mono leading-relaxed max-h-60 overflow-y-auto">
                 {report.extracted_text}
               </div>
-          </section>
+          </section> */}
 
         </div>
 
         {/* 5. Right Column: Risk Score (Polished) */}
         <aside className="space-y-8">
+          {/* Updated Risk Card logic */}
           <div className={`p-8 rounded-3xl text-white shadow-2xl transition-all ${
-            report.risk_score ? 'bg-indigo-600 shadow-indigo-200' : 'bg-slate-400 opacity-60'
+            report.risk_score 
+              ? (report.risk_score > 50 ? 'bg-red-500 shadow-red-100' : 'bg-indigo-600 shadow-indigo-100') 
+              : 'bg-emerald-500 shadow-emerald-100'
           }`}>
             <ShieldAlert size={40} className="mb-6 opacity-80" />
-            <h3 className="text-xl font-bold mb-2">Health Risk Score</h3>
-            <p className="text-indigo-100 text-xs leading-relaxed mb-6">
+            <h3 className="text-xl font-bold mb-2">Clinical Status</h3>
+            
+            <p className="text-white/80 text-xs leading-relaxed mb-6">
               {report.risk_score 
-                ? "Based on your clinical markers, the AI predicts the following probability:" 
-                : "Numerical data was insufficient to calculate a specific risk percentage."}
+                ? `AI has detected a ${report.risk_score}% probability of clinical concern.` 
+                : "No critical abnormalities detected. Patient status appears stable."}
             </p>
-            <div className="text-5xl font-black tracking-tighter">
-              {report.risk_score !== null ? `${report.risk_score}%` : "--"}
+
+            <div className="text-4xl font-black tracking-tighter">
+              {report.risk_score !== null ? `${report.risk_score}%` : "STABLE"}
             </div>
           </div>
         </aside>
