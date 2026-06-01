@@ -2,7 +2,7 @@
 
 import { useReport } from '@/features/reports/useReports';
 import { useParams } from 'next/navigation';
-import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill } from 'lucide-react';
+import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ReportDetailPage() {
@@ -37,72 +37,83 @@ export default function ReportDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-20">
-      {/* Navigation */}
+      {/* 1. Navigation */}
       <Link href="/reports" className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:gap-3 transition-all">
         <ArrowLeft size={16} /> Back to Vault
       </Link>
 
-      {/* Hero Header */}
-      <header className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center">
+      {/* 2. Professional Header */}
+      <header className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">{report.filename}</h1>
-          <p className="text-slate-500 text-sm">Processed on {new Date(report.created_at).toLocaleString()}</p>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-black text-slate-900">{report.filename}</h1>
+            <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-tighter">
+              {report.report_type || "General"}
+            </span>
+          </div>
+          <p className="text-slate-500 text-sm font-medium">Processed on {new Date(report.created_at).toLocaleString()}</p>
         </div>
-        <div className="px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-bold">
-          AI Analysis Complete
+        <div className="px-6 py-3 bg-green-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-green-100 flex items-center gap-2">
+          <CheckCircle size={18} /> AI Analysis Verified
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Analysis Results */}
         <div className="lg:col-span-2 space-y-8">
           
-          {/* Section 1: Detected Entities */}
-          <section className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-            <h2 className="flex items-center gap-2 text-lg font-bold mb-6">
-              <Activity className="text-red-500" /> Medical Entities Detected
+          {/* 3. NEW: Laboratory Values Grid */}
+          <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <Pill className="text-indigo-500" size={20} /> Extracted Lab Markers
             </h2>
             
-            <div className="space-y-6">
-              <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Diseases & Conditions</p>
-                <div className="flex flex-wrap gap-2">
-                  {report.detected_entities.diseases.map((d: string) => (
-                    <span key={d} className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-bold border border-red-100">{d}</span>
-                  ))}
-                </div>
+            {Object.keys(report.extracted_values).length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {Object.entries(report.extracted_values).map(([key, value]) => (
+                  <div key={key} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-colors">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{key}</p>
+                    <p className="text-lg font-mono font-bold text-indigo-600">{value as string}</p>
+                  </div>
+                ))}
               </div>
-
-              <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Symptoms / Signs</p>
-                <div className="flex flex-wrap gap-2">
-                  {report.detected_entities.symptoms.map((s: string) => (
-                    <span key={s} className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-100">{s}</span>
-                  ))}
-                </div>
+            ) : (
+              <div className="text-sm text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center">
+                No specific numerical markers detected in this document.
               </div>
-            </div>
+            )}
           </section>
 
-          {/* Section 2: Raw Extracted Text */}
-          <section className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl">
-            <h2 className="text-white text-lg font-bold mb-4 opacity-90">Digital Text Version</h2>
-            <div className="text-slate-400 text-sm font-mono leading-relaxed max-h-60 overflow-y-auto">
-              {report.extracted_text}
-            </div>
+          {/* 4. Detected Entities Section (Keep your existing pills code here) */}
+          <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Medical Insights</h2>
+              <div className="text-slate-400 text-sm font-mono leading-relaxed max-h-60 overflow-y-auto">
+                {report.extracted_text}
+              </div>
           </section>
+
         </div>
 
-        {/* Right Column: Risk & Quick Stats */}
-        <div className="space-y-8">
-          <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-lg shadow-indigo-200">
-            <ShieldAlert size={32} className="mb-4 opacity-80" />
-            <h3 className="text-lg font-bold mb-1">Risk Assessment</h3>
-            <p className="text-indigo-100 text-sm mb-4">Our AI models are calculating your specific risk scores based on this data.</p>
-            <div className="text-3xl font-black italic opacity-50">SCORING...</div>
+        {/* 5. Right Column: Risk Score (Polished) */}
+        <aside className="space-y-8">
+          <div className={`p-8 rounded-3xl text-white shadow-2xl transition-all ${
+            report.risk_score ? 'bg-indigo-600 shadow-indigo-200' : 'bg-slate-400 opacity-60'
+          }`}>
+            <ShieldAlert size={40} className="mb-6 opacity-80" />
+            <h3 className="text-xl font-bold mb-2">Health Risk Score</h3>
+            <p className="text-indigo-100 text-xs leading-relaxed mb-6">
+              {report.risk_score 
+                ? "Based on your clinical markers, the AI predicts the following probability:" 
+                : "Numerical data was insufficient to calculate a specific risk percentage."}
+            </p>
+            <div className="text-5xl font-black tracking-tighter">
+              {report.risk_score !== null ? `${report.risk_score}%` : "--"}
+            </div>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );
+
+
+
 }

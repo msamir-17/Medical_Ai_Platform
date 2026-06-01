@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.models import report, user  # Import your models
+from app.models import user  # Import your models
+from app.models import report
 from app.routers import diabetes_routes, report_routes , chat_routes , auth_routes 
 
 
@@ -9,6 +10,7 @@ from app.routers import diabetes_routes, report_routes , chat_routes , auth_rout
 
 
 # This looks at all models that inherit from 'Base' and creates tables in Supabase
+
 Base.metadata.create_all(bind=engine)
 
 

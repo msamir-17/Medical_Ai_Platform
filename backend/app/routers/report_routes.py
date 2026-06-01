@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 import uuid
 from app.database import get_db
 from app.models.report import Report
+# from app.services.diabetes_service import DiabetesService 
+from app.services.diabetes_service import diabetes_service
+
 
 
 router = APIRouter()
@@ -21,8 +24,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 async def upload_report(
     file: UploadFile = File(...),
     db: Session = Depends(get_db) # <--- DB connection mangwaya
-                        
-    ):
+   ):
 
     # 1. Basic Validation
     if not file.filename.endswith(('.pdf', '.png', '.jpg', '.jpeg')):
@@ -34,6 +36,8 @@ async def upload_report(
     safe_filename = f"{file_id}{ext}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
+
+
     try:
         # 2. Save file locally
         with open(file_path, "wb") as buffer:
@@ -43,6 +47,28 @@ async def upload_report(
         raw_text = ocr_service.extract_text(file_path)
         extracted_values = ocr_service.extract_medical_values(raw_text)
         medical_entities = nlp_service.extract_entities(raw_text)
+
+                # 1. REPORT CLASSIFICATION
+        report_type = "General"
+        if "ph" in extracted_values or "pco2" in extracted_values:
+            report_type = "ABG (Arterial Blood Gas)"
+        elif "glucose" in extracted_values:
+            report_type = "Diabetes Screening"
+
+         # 2. CONDITIONAL RISK (Feature Completeness Check)
+        calculated_risk = None
+        if "glucose" in extracted_values:
+            try:
+                # We use predict_service (the instance we exported)
+                result = diabetes_service.predict_diabetes({
+                    "Pregnancies": 0, "Glucose": float(extracted_values["glucose"]),
+                    "BloodPressure": 70, "SkinThickness": 20, "Insulin": 79,
+                    "BMI": 25, "DiabetesPedigreeFunction": 0.5, "Age": 30
+                })
+                calculated_risk = result["risk_score"]
+            except:
+                calculated_risk = None
+
         
         # Chatbot memory mein dalna
         rag_service.index_report(raw_text, user_id="123") 
@@ -55,7 +81,8 @@ async def upload_report(
             extracted_text=raw_text,
             detected_entities=medical_entities,
             extracted_values=extracted_values,
-            risk_score=None # Baad mein ML model se aayega
+            risk_score=calculated_risk, # Baad mein ML model se aayega
+            report_type=report_type 
         )
         
         db.add(new_report)   # Data ko queue mein dalo

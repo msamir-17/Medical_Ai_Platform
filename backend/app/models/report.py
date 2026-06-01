@@ -27,3 +27,5 @@ class Report(Base):
     
     # 7. Timestamp: When was this uploaded?
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    report_type = Column(String, default="General")

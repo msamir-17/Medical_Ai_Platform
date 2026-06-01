@@ -112,17 +112,17 @@ class OCRService:
 
 
         patterns = {
-
             "glucose": r"[Gg]lucose[:\s]+(\d+\.?\d*)",
 
-            "bp": r"[Bb]lood\s?[Pp]ressure[:\s]+(\d+/\d+)",
+            "hb": r"[Hh]emoglobin[:\s]+(\d+\.?\d*)",
 
+            "ph": r"[Pp][Hh][:\s]+(\d+\.?\d*)",
+
+            "pco2": r"[Pp][Cc][Oo]2[:\s]+(\d+\.?\d*)",
+
+            "po2": r"[Pp][Oo]2[:\s]+(\d+\.?\d*)",
+            
             "bmi": r"[Bb][Mm][Ii][:\s]+(\d+\.?\d*)",
-
-            "hemoglobin": r"[Hh]emoglobin[:\s]+(\d+\.?\d*)",
-
-            "wbc": r"[Ww][Bb][Cc][:\s]+(\d+)",
-
         }
 
         extracted = {}

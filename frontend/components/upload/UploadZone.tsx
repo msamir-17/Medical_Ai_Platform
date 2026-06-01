@@ -32,45 +32,49 @@ export function UploadZone() {
       `}>
         <input 
           type="file" 
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
           onChange={handleFileUpload}
           accept=".pdf,.png,.jpg,.jpeg"
           disabled={status === 'uploading'}
         />
 
-        <div className="flex flex-col items-center gap-4">
-          {status === 'idle' && (
-            <>
-              <div className="p-4 rounded-full bg-[--color-primary-50] text-[--color-primary-500]">
-                <Upload size={32} />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-[--color-text-primary]">Click or drag report here</p>
-                <p className="text-sm text-[--color-text-secondary]">PDF, PNG, or JPG (Max 10MB)</p>
-              </div>
-            </>
-          )}
+          <div className="flex flex-col items-center gap-6">
+            {status === 'idle' && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center shadow-inner">
+                  <Upload size={32} />
+                </div>
+                <div>
+                  <p className="text-xl font-bold text-slate-900">Drop your medical report</p>
+                  <p className="text-sm text-slate-500 mt-1 font-medium">Support for PDF, PNG, or JPG (Max 10MB)</p>
+                </div>
+              </>
+            )}
 
-          {status === 'uploading' && (
-            <>
-              <Loader2 className="animate-spin text-[--color-primary-500]" size={40} />
-              <p className="text-[--color-text-primary] font-medium">Analyzing {fileName}...</p>
-              <p className="text-sm text-[--color-text-secondary]">Our AI is reading your medical data</p>
-            </>
-          )}
+            {status === 'uploading' && (
+              <>
+                <Loader2 className="animate-spin text-indigo-600" size={48} />
+                <div>
+                  <p className="text-lg font-bold text-slate-900">AI is reading your report...</p>
+                  <p className="text-sm text-slate-500 mt-1 font-medium italic">Extracting lab values and medical entities</p>
+                </div>
+              </>
+            )}
 
-          {status === 'success' && (
-            <>
-              <CheckCircle2 className="text-[--color-success]" size={40} />
-              <p className="text-[--color-text-primary] font-medium">Upload Complete!</p>
-              <button 
-                onClick={() => setStatus('idle')}
-                className="text-sm text-[--color-primary-500] font-semibold hover:underline"
-              >
-                Upload another report
-              </button>
-            </>
-          )}
+            {status === 'success' && (
+              <>
+                <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                  <CheckCircle2 size={32} />
+                </div>
+                <p className="text-lg font-bold text-slate-900">Analysis Complete!</p>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setStatus('idle'); }}
+                  className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
+                >
+                  Upload Another
+                </button>
+              </>
+            )}
         </div>
       </div>
     </div>
