@@ -164,3 +164,26 @@ async def get_report_details(report_id: str, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=404, detail="Report not found")
         
     return report
+
+
+@router.delete("/{report_id}")
+async def delete_report(
+    report_id: str, 
+    db: Session = Depends(get_db), 
+    current_user_id: str = Depends(get_current_user)
+):
+    """Securely deletes a report only if it belongs to the current user."""
+    report = db.query(Report).filter(Report.id == report_id, Report.user_id == current_user_id).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found or unauthorized")
+
+    try:
+        db.delete(report)
+        db.commit()
+        return {"message": "Report deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+    
+    

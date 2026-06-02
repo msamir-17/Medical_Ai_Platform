@@ -1,6 +1,7 @@
 import React from 'react';
-import { FileText, Calendar, ArrowRight } from 'lucide-react';
+import { FileText, Calendar, ArrowRight , Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { useDeleteReport } from '@/features/reports/useReports';
 
 interface ReportCardProps {
   id: string;
@@ -13,6 +14,15 @@ export function ReportCard({ id, filename, date }: ReportCardProps) {
   const formattedDate = new Date(date).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric'
   });
+
+const deleteMutation = useDeleteReport();
+
+const handleDelete = async (e: React.MouseEvent) => {
+  e.preventDefault(); // Stop navigation to detail page
+  if (confirm("Are you sure you want to delete this report?")) {
+    deleteMutation.mutate(id);
+  }
+};
 
   return (
     <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
@@ -38,6 +48,13 @@ export function ReportCard({ id, filename, date }: ReportCardProps) {
       >
         View Details <ArrowRight size={14} />
       </Link>
+      <button 
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+        className="text-slate-300 hover:text-red-500 transition-colors p-1"
+      >
+        <Trash2 size={16} />
+      </button>
     </div>
   );
 }

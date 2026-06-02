@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { reportService } from './reportService';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 
 export function useReportStats() {
@@ -28,5 +29,21 @@ export function useReport(id: string) {
     queryKey: ['report', id],
     queryFn: () => reportService.getById(id),
     enabled: !!id && id !== 'undefined', 
+  });
+}
+
+
+export function useDeleteReport() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/reports/${id}`);
+    },
+    onSuccess: () => {
+      // Refresh both 'all-reports' and 'report-stats' keys automatically!
+      queryClient.invalidateQueries({ queryKey: ['all-reports'] });
+      queryClient.invalidateQueries({ queryKey: ['report-stats'] });
+    },
   });
 }
