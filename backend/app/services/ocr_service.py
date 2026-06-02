@@ -123,6 +123,14 @@ class OCRService:
             "po2": r"[Pp][Oo]2[:\s]+(\d+\.?\d*)",
             
             "bmi": r"[Bb][Mm][Ii][:\s]+(\d+\.?\d*)",
+
+            "haemoglobin": r"[Hh]aemoglobin[:\s]+(\d+\.?\d*)",
+
+            "wbc": r"Total\s?[Ww]\.?[Bb]\.?[Cc]\.?\s?Count[:\s]+(\d+)",
+
+            "platelets": r"Platelet\s?Count[:\s]+(\d+)",
+            
+            "creatinine": r"Serum\s?Creatinine[:\s]+(\d+\.?\d*)"
         }
 
         extracted = {}

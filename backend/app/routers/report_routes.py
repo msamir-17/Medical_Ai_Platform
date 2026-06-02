@@ -64,6 +64,11 @@ async def upload_report(
         elif "ph" in extracted_values:
             report_type = "ABG Report"
 
+        if "haemoglobin" in extracted_values or "wbc" in extracted_values:
+            report_type = "Complete Blood Count (CBC)"
+        elif "ph" in extracted_values:
+            report_type = "ABG (Arterial Blood Gas)"
+
         patient_metadata = rag_service.extract_patient_metadata(raw_text)
 
          # 2. CONDITIONAL RISK (Feature Completeness Check)
