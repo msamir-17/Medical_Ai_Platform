@@ -130,3 +130,12 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         return user_id # This returns the REAL UUID of the logged-in user
     except JWTError:
         raise credentials_exception
+
+@router.get("/me")
+async def get_me(db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):
+    """Returns the profile of the currently logged-in user."""
+    user = db.query(User).filter(User.id == current_user_id).first()
+    return {"email": user.email, "id": user.id}
+
+
+
