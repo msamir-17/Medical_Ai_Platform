@@ -12,6 +12,8 @@ from app.models.report import Report
 # from app.services.diabetes_service import DiabetesService 
 from app.services.diabetes_service import diabetes_service
 from app.routers.auth_routes import get_current_user
+from app.services.heart_service import heart_service
+
 
 
 
@@ -50,17 +52,29 @@ async def upload_report(
         extracted_values = ocr_service.extract_medical_values(raw_text)
         medical_entities = nlp_service.extract_entities(raw_text)
 
-                # 1. REPORT CLASSIFICATION
+        # 1. REPORT CLASSIFICATION
         report_type = "General"
         if "ph" in extracted_values or "pco2" in extracted_values:
             report_type = "ABG (Arterial Blood Gas)"
         elif "glucose" in extracted_values:
             report_type = "Diabetes Screening"
 
+        if "cholesterol" in extracted_values or "triglycerides" in extracted_values:
+            report_type = "Lipid Profile (Cardiac)"
+        elif "ph" in extracted_values:
+            report_type = "ABG Report"
+
+        patient_metadata = rag_service.extract_patient_metadata(raw_text)
+
          # 2. CONDITIONAL RISK (Feature Completeness Check)
          # SHAP values ke liye placeholder
-        calculated_risk = None
-        calculated_risk_values = []
+        final_risk_score = None
+        final_shap_values = []
+        report_type = "General"
+
+        if "ph" in extracted_values or "pco2" in extracted_values:
+            report_type = "ABG (Arterial Blood Gas)"
+
 
         if "glucose" in extracted_values:
             print(f"🔍 DEBUG: Glucose found ({extracted_values['glucose']}). Starting prediction...")
@@ -76,14 +90,31 @@ async def upload_report(
                     "DiabetesPedigreeFunction": 0.5, 
                     "Age": 30
                 })
-                calculated_risk = result["risk_score"]
-                calculated_risk_values = result["shap_explanation"]
-                print(f"✅ DEBUG: Prediction Success! Score: {calculated_risk}")
+                final_risk_score = result["risk_score"]
+                final_shap_values = result["shap_explanation"]
+                # print(f"✅ DEBUG: Prediction Success! Score: {final_risk_score}")
 
             except Exception as e:
                 # Yeh line aapko terminal mein batayegi ki asli problem kya hai
                 print(f"❌ DEBUG: Prediction Failed! Error: {str(e)}")
-                calculated_risk = None
+                # final_risk_score = None
+
+        elif "cholesterol" in extracted_values: 
+            report_type = "Lipid Profile (Cardiac)"           
+            try:
+                # We fill missing values with averages for the Cleveland model
+                heart_input = {
+                    "age": float(patient_metadata.get("age", 45) if str(patient_metadata.get("age")).isdigit() else 45),
+                    "sex": 1 if patient_metadata.get("gender") == "Male" else 0,
+                    "cp": 1, "trestbps": 120, "chol": float(extracted_values["cholesterol"]),
+                    "fbs": 0, "restecg": 0, "thalach": 150, "exang": 0,
+                    "oldpeak": 1.0, "slope": 1, "ca": 0, "thal": 2
+                }
+                res = heart_service.predict_heart_risk(heart_input)
+                final_risk_score = res["risk_score"]
+                final_shap_values = res["shap_explanation"]
+            except Exception as e: print(f"Cardiac Prediction Error: {e}")
+
         else:
             print("⚠️ DEBUG: No 'glucose' key found in extracted_values. Skipping prediction.") 
 
@@ -101,9 +132,9 @@ async def upload_report(
             extracted_text=raw_text,
             detected_entities=medical_entities,
             extracted_values=extracted_values,
-            risk_score=calculated_risk, # Baad mein ML model se aayega
+            risk_score=final_risk_score, # Baad mein ML model se aayega
             patient_info=patient_metadata,
-            shap_values=calculated_risk_values,
+            shap_values=final_shap_values,
             report_type=report_type 
         )
         
@@ -185,5 +216,4 @@ async def delete_report(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
-    
     
