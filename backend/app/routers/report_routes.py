@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 import uuid
 from app.database import get_db
 from app.models.report import Report
-# from app.services.diabetes_service import DiabetesService 
 from app.services.diabetes_service import diabetes_service
 from app.routers.auth_routes import get_current_user
 from app.services.heart_service import heart_service
@@ -26,7 +25,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload")
 async def upload_report(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db), # <--- DB connection mangwaya
+    db: Session = Depends(get_db), 
     current_user_id: str = Depends(get_current_user)
    ):
 
@@ -40,46 +39,39 @@ async def upload_report(
     safe_filename = f"{file_id}{ext}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
+    # 2. Save file locally
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
+    final_risk_score = None
+    final_shap_values = []
+    report_type = "General"
+    patient_metadata = {"name": "Unknown", "age": "N/A"}
 
     try:
-        # 2. Save file locally
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
 
         # 3. AI Pipeline (OCR -> NLP -> RAG)
         raw_text = ocr_service.extract_text(file_path)
         extracted_values = ocr_service.extract_medical_values(raw_text)
         medical_entities = nlp_service.extract_entities(raw_text)
 
+        # 2. METADATA & INTERPRETATION (The Smart Logic)
+        patient_metadata = rag_service.extract_patient_metadata(raw_text)
+        # Pass the DICTIONARY of numbers, not the raw text!
+        interpreted_list = ocr_service.interpret_markers(extracted_values)
+
         # 1. REPORT CLASSIFICATION
         report_type = "General"
-        if "ph" in extracted_values or "pco2" in extracted_values:
+        # 3. CLASSIFICATION
+        if "ph" in extracted_values:
             report_type = "ABG (Arterial Blood Gas)"
         elif "glucose" in extracted_values:
             report_type = "Diabetes Screening"
-
-        if "cholesterol" in extracted_values or "triglycerides" in extracted_values:
+        elif "cholesterol" in extracted_values:
             report_type = "Lipid Profile (Cardiac)"
-        elif "ph" in extracted_values:
-            report_type = "ABG Report"
-
-        if "haemoglobin" in extracted_values or "wbc" in extracted_values:
+        elif "haemoglobin" in extracted_values or "wbc" in extracted_values:
             report_type = "Complete Blood Count (CBC)"
-        elif "ph" in extracted_values:
-            report_type = "ABG (Arterial Blood Gas)"
-
-        patient_metadata = rag_service.extract_patient_metadata(raw_text)
-
-         # 2. CONDITIONAL RISK (Feature Completeness Check)
-         # SHAP values ke liye placeholder
-        final_risk_score = None
-        final_shap_values = []
-        report_type = "General"
-
-        if "ph" in extracted_values or "pco2" in extracted_values:
-            report_type = "ABG (Arterial Blood Gas)"
-
+        
 
         if "glucose" in extracted_values:
             print(f"🔍 DEBUG: Glucose found ({extracted_values['glucose']}). Starting prediction...")
@@ -124,8 +116,6 @@ async def upload_report(
             print("⚠️ DEBUG: No 'glucose' key found in extracted_values. Skipping prediction.") 
 
         patient_metadata = rag_service.extract_patient_metadata(raw_text)
-
-
         # Chatbot memory mein dalna
         rag_service.index_report(raw_text, user_id=current_user_id) 
 
@@ -136,7 +126,7 @@ async def upload_report(
             filename=file.filename,
             extracted_text=raw_text,
             detected_entities=medical_entities,
-            extracted_values=extracted_values,
+            extracted_values=interpreted_list,
             risk_score=final_risk_score, # Baad mein ML model se aayega
             patient_info=patient_metadata,
             shap_values=final_shap_values,

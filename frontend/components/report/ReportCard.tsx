@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Calendar, ArrowRight , Trash2 } from 'lucide-react';
+import { FileText, Calendar, ArrowRight , Trash2 ,Loader2  } from 'lucide-react';
 import Link from 'next/link';
 import { useDeleteReport } from '@/features/reports/useReports';
 
@@ -51,9 +51,14 @@ const handleDelete = async (e: React.MouseEvent) => {
       <button 
         onClick={handleDelete}
         disabled={deleteMutation.isPending}
-        className="text-slate-300 hover:text-red-500 transition-colors p-1"
+        className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all z-10"
+        title="Delete Report"
       >
-        <Trash2 size={16} />
+      {deleteMutation.isPending ? (
+          <Loader2 className="animate-spin" size={16} />
+        ) : (
+          <Trash2 size={16} />
+        )}
       </button>
     </div>
   );

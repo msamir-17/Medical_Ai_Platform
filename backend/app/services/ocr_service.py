@@ -145,7 +145,44 @@ class OCRService:
         return extracted
 
 
+    def interpret_markers(self, values: dict):
+        """Provides human-readable meaning for lab markers."""
+        # Industry Standard: Reference ranges (Common values)
+        reference = {
+            "haemoglobin": {"min": 13.5, "max": 17.5, "unit": "g/dL", "label": "Blood Level"},
+            "wbc": {"min": 4000, "max": 11000, "unit": "/cmm", "label": "Immunity (WBC)"},
+            "platelets": {"min": 150000, "max": 450000, "unit": "/cmm", "label": "Blood Clotting"},
+            "glucose": {"min": 70, "max": 100, "unit": "mg/dL", "label": "Blood Sugar"},
+            "cholesterol": {"min": 120, "max": 200, "unit": "mg/dL", "label": "Heart Fat"},
+            "ph": {"min": 7.35, "max": 7.45, "unit": "", "label": "Blood Acidity (pH)"},
+            "pco2": {"min": 35, "max": 45, "unit": "mmHg", "label": "Carbon Dioxide"},
+            "po2": {"min": 80, "max": 100, "unit": "mmHg", "label": "Oxygen Level"}
+        }
 
+        interpreted = []
+        for key, value in values.items():
+            ref = reference.get(key)
+            if ref:
+                val_float = float(value)
+                status = "Normal"
+                color = "green"
+                
+                if val_float < ref["min"]:
+                    status = "Low"
+                    color = "blue"
+                elif val_float > ref["max"]:
+                    status = "High"
+                    color = "red"
+
+                interpreted.append({
+                    "marker": key.upper(),
+                    "value": value,
+                    "unit": ref["unit"],
+                    "meaning": ref["label"],
+                    "status": status,
+                    "color": color
+                })
+        return interpreted
 
 # Singleton Instance
 ocr_service = OCRService()

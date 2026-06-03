@@ -2,7 +2,7 @@
 
 import { useReport } from '@/features/reports/useReports';
 import { useParams } from 'next/navigation';
-import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill, CheckCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, Activity, ShieldAlert, Pill, CheckCircle ,Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { ShapBarChart } from '@/components/risk/ShapBarChart';
 
@@ -120,37 +120,44 @@ export default function ReportDetailPage() {
           </section>
 
 
-          {/* 3. NEW: Laboratory Values Grid */}
+          {/* Lab Results Interpretation Grid */}
           <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <Pill className="text-indigo-500" size={20} /> Extracted Lab Markers
+              <Sparkles className="text-indigo-500" size={20} /> Lab Result Interpretation
             </h2>
             
-            {Object.keys(report.extracted_values).length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {Object.entries(report.extracted_values).map(([key, value]) => (
-                  <div key={key} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-colors">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{key}</p>
-                    <p className="text-lg font-mono font-bold text-indigo-600">{value as string}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* SAFETY: Check if extracted_values is a list before mapping */}
+              {Array.isArray(report.extracted_values) ? (
+                report.extracted_values.map((item: any) => (
+                  <div key={item.marker} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden group hover:border-indigo-200 transition-all">
+                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${
+                      item.color === 'red' ? 'bg-red-500' : item.color === 'blue' ? 'bg-blue-500' : 'bg-emerald-500'
+                    }`} />
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{item.meaning}</p>
+                        <h3 className="font-bold text-slate-900">{item.marker}</h3>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                        item.color === 'red' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                      }`}>{item.status}</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-indigo-600">{item.value}</span>
+                      <span className="text-xs font-bold text-slate-400">{item.unit}</span>
+                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-sm text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center">
-                No specific numerical markers detected in this document.
-              </div>
-            )}
+                ))
+              ) : (
+                <div className="col-span-2 text-center py-10 bg-slate-50 rounded-2xl border border-dashed text-slate-400 italic">
+                  Old data format or no markers detected. Please re-upload for full analysis.
+                </div>
+              )}
+            </div>
           </section>
 
-          {/* 4. Detected Entities Section (Keep your existing pills code here) */}
-          {/* <section className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-900 mb-6">Medical Insights</h2>
-              <div className="text-slate-400 text-sm font-mono leading-relaxed max-h-60 overflow-y-auto">
-                {report.extracted_text}
-              </div>
-          </section> */}
-
-        </div>
+          </div>
 
         {/* 5. Right Column: Risk Score (Polished) */}
         <aside className="space-y-8">
