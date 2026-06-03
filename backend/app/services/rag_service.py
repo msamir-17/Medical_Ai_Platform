@@ -25,26 +25,26 @@ class RAGService:
             model_name="llama-3.1-8b-instant"
         )
 
-    def index_report(self, text: str, user_id: str):
+    def index_report(self, text: str, user_id: str,report_id: str):
         """Chunks and stores the report in FAISS."""
         chunks = self.text_splitter.split_text(text)
-        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
+        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
         db = FAISS.from_texts(chunks, self.embeddings)
         db.save_local(user_db_path)
         return len(chunks)
 
-    def query_report(self, question: str, user_id: str):
+    def query_report(self, question: str, user_id: str, report_id: str = None):
         """Retrieves context and generates an AI answer."""
-        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}")
+        if report_id:
+            path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
+        else:
+            path = os.path.join(self.vector_db_path, f"user_{user_id}")
 
-        if not os.path.exists(user_db_path):
-            return {
-                "answer": "No report found. Please upload a PDF first.",
-                "sources": ""
-            }
+        if not os.path.exists(path):
+            return {"answer": "Context not found.", "sources": ""}
 
         # Load the index
-        db = FAISS.load_local(user_db_path, self.embeddings, allow_dangerous_deserialization=True)
+        db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
 
         # Search for top 3 matches
         relevant_docs = db.similarity_search(question, k=3)

@@ -5,6 +5,7 @@ import { Send, Bot, Loader2, Database } from 'lucide-react';
 import { chatService } from '@/features/chat/chatService';
 import { useAllReports } from '@/features/reports/useReports';
 
+
 interface Message {
   role: 'user' | 'ai';
   content: string;
@@ -18,24 +19,29 @@ export function ChatWindow() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSend = async () => {
+    // Inside ChatWindow.tsx -> handleSend function:
     if (!input.trim()) return;
 
     const userMessage: Message = { role: 'user', content: input };
     setMessages((prev) => [...prev, userMessage]);
+
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
     try {
-      const data = await chatService.askQuestion(input);
-      const aiMessage: Message = { role: 'ai', content: data.answer };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+    // 3. AB API CALL KAREIN (Sirf ek baar!)
+    // Note: '123' ki jagah real ID use karenge jab Auth fully integrated ho
+    const data = await chatService.askQuestion(currentInput, "123", selectedReportId);
+    
+    const aiMessage: Message = { role: 'ai', content: data.answer };
+    setMessages((prev) => [...prev, aiMessage]);
+  } catch (error) {
+    console.error("Chat Error:", error);
+  } finally {
+    setIsLoading(false);
+  }
+};
   return (
     <div className="flex flex-col h-150 border rounded-3xl bg-white overflow-hidden shadow-xl border-slate-100">
       

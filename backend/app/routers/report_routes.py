@@ -117,7 +117,7 @@ async def upload_report(
 
         patient_metadata = rag_service.extract_patient_metadata(raw_text)
         # Chatbot memory mein dalna
-        rag_service.index_report(raw_text, user_id=current_user_id) 
+        rag_service.index_report(raw_text, user_id=current_user_id,report_id=file_id) 
 
         # 4. DATABASE MEIN SAVE KARNA (The Professional Way)
         new_report = Report(

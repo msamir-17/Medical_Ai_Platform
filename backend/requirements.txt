@@ -1,17 +1,43 @@
+# --- Web & API Core ---
 fastapi
 uvicorn
 python-multipart
+python-dotenv
+pydantic-settings
+pydantic[email]
+
+# --- Database ---
+sqlalchemy
+psycopg2-binary
+
+# --- Security & Auth ---
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+
+# --- AI & Machine Learning ---
 scikit-learn
 pandas
 numpy
 joblib
 shap
+rapidfuzz
+
+# --- OCR & Image Processing ---
 easyocr
 pymupdf
+Pillow
+
+# --- NLP & RAG (The Heavy Lifters) ---
 transformers
 torch
 langchain
 langchain-community
 langchain-huggingface
+langchain-groq
+langchain-text-splitters
 faiss-cpu
 sentence-transformers
+
+# --- Communication ---
+resend

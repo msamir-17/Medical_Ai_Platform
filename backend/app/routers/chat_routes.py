@@ -7,11 +7,12 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     user_id: str
     question: str
+    report_id: Optional[str] = None
 
 @router.post("/query")
 async def ask_question(request: ChatRequest):
     try:
-        result = rag_service.query_report(request.question, request.user_id)
+        result = rag_service.query_report(request.question, request.user_id, request.report_id)
         
         # Safe check: In industry, we always check the type of our result
         if not isinstance(result, dict):
