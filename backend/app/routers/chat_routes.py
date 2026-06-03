@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.rag_service import rag_service
+from typing import Optional
 
 router = APIRouter()
 
@@ -11,6 +12,7 @@ class ChatRequest(BaseModel):
 
 @router.post("/query")
 async def ask_question(request: ChatRequest):
+    print(f"DEBUG DATA RECEIVED: {request}")
     try:
         result = rag_service.query_report(request.question, request.user_id, request.report_id)
         
