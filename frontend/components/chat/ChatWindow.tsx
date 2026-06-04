@@ -32,7 +32,7 @@ export function ChatWindow() {
     try {
     // 3. AB API CALL KAREIN (Sirf ek baar!)
     // Note: '123' ki jagah real ID use karenge jab Auth fully integrated ho
-    const data = await chatService.askQuestion(currentInput, "123", selectedReportId);
+    const data = await chatService.askQuestion(currentInput, selectedReportId);
     
     const aiMessage: Message = { role: 'ai', content: data.answer };
     setMessages((prev) => [...prev, aiMessage]);

@@ -1,7 +1,8 @@
 'use client';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MobileNav } from '@/components/layout/MobileNav';
 
@@ -11,15 +12,29 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) 
 {
-  const token = useAuthStore((state) => state.token);
+  const { token, _hasHydrated } = useAuthStore(); // Get both token and hydration status
   const router = useRouter();
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    // If no token, kick them back to login!
-    if (!token) {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    // SIRF tab redirect karo jab store load ho chuka ho AUR token missing ho
+    if (_hasHydrated && !token) {
       router.push('/login');
     }
-  }, [token, router]);
+  }, [_hasHydrated, token, router]);
+
+    // Jab tak hydration complete nahi hoti, tab tak loader dikhao
+  if (!isClient || !_hasHydrated) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-white">
+        <Loader2 className="animate-spin text-indigo-600" size={40} />
+      </div>
+    );
+  }
 
   if (!token) return null; // Prevent flickering while redirecting
 

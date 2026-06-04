@@ -30,7 +30,10 @@ Pillow
 
 # --- NLP & RAG (The Heavy Lifters) ---
 transformers
+# --- Replace original torch with this ---
+--find-links https://download.pytorch.org/whl/cpu
 torch
+torchvision
 langchain
 langchain-community
 langchain-huggingface

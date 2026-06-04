@@ -4,6 +4,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import os
+from langchain_core.output_parsers import JsonOutputParser
+
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,53 +28,125 @@ class RAGService:
             model_name="llama-3.1-8b-instant"
         )
 
-    def index_report(self, text: str, user_id: str,report_id: str):
-        """Chunks and stores the report in FAISS."""
+    def index_report(self, text: str, user_id: str, report_id: str):
         chunks = self.text_splitter.split_text(text)
-        user_db_path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
+        
+        # 1. Save Specific Report Index (Existing Logic)
+        report_path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
+        os.makedirs(report_path, exist_ok=True)
         db = FAISS.from_texts(chunks, self.embeddings)
-        db.save_local(user_db_path)
+        db.save_local(report_path)
+
+        # 2. THE FIX: Create/Update Master User Index
+        master_path = os.path.join(self.vector_db_path, f"user_{user_id}", "master_index")
+        os.makedirs(master_path, exist_ok=True)
+        
+        if os.path.exists(os.path.join(master_path, "index.faiss")):
+            # If master exists, add new report chunks to it
+            master_db = FAISS.load_local(master_path, self.embeddings, allow_dangerous_deserialization=True)
+            master_db.add_texts(chunks)
+            master_db.save_local(master_path)
+        else:
+            # First report? Create the master index
+            db.save_local(master_path)
+            
+        print(f"✅ MASTER INDEX UPDATED at {master_path}")
         return len(chunks)
 
-    def query_report(self, question: str, user_id: str, report_id: str = None):
-        """Retrieves context and generates an AI answer."""
-        if report_id:
+    def classify_query(self, question: str):
+        """
+        Senior Logic: Decisions whether to use Structured Data (SQL) or Unstructured (RAG).
+        """
+        prompt = ChatPromptTemplate.from_template("""
+        Analyze the user's medical question and categorize it into ONE of these:
+        1. "NUMERIC": Question is about a specific lab value (e.g., What is my glucose?)
+        2. "EXPLANATION": Question asks WHY a value is high/low or what it means.
+        3. "SUMMARY": User wants a summary of the report.
+        4. "GENERAL": Anything else (Doctor name, hospital, etc.)
+
+        Return ONLY a JSON object like this: {{"category": "CATEGORY_NAME", "target_marker": "marker_name_if_any"}}
+        
+        Question: {question}
+        """)
+        
+        chain = prompt | self.llm | JsonOutputParser()
+        try:
+            return chain.invoke({"question": question})
+        except:
+            # FIX: Use empty string instead of None
+            return {"category": "GENERAL", "target_marker": ""}
+
+    def query_report(self, question: str, user_id: str, report_id: str = None, db_report_data: dict = None):
+        """
+        The Router Logic: Routes the question to the best data source.
+        """
+        # 1. Decide Path and System Role
+        if report_id and report_id != "":
             path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
         else:
-            path = os.path.join(self.vector_db_path, f"user_{user_id}")
+            path = os.path.join(self.vector_db_path, f"user_{user_id}", "master_index")
 
         if not os.path.exists(path):
-            return {"answer": "Context not found.", "sources": ""}
+            return {"answer": "I don't have these reports in my memory yet. Please re-upload.", "sources": ""}
 
-        # Load the index
+
+        # 2. Classify the intent (Numerical vs General)
+        intent = self.classify_query(question)
+        category = intent.get("category", "GENERAL")
+        marker_raw = intent.get("target_marker", "")
+        marker = marker_raw.lower() if marker_raw else ""
+
+        # 3. ROUTE A: Numeric Data (Source: Postgres/Supabase)
+        if category == "NUMERIC" and db_report_data:
+            for item in db_report_data.get("extracted_values", []):
+                if marker in item['marker'].lower() or item['marker'].lower() in marker:
+                    return {
+                        "answer": f"Your {item['marker']} level is {item['value']} {item['unit']}. This is considered {item['status']}.",
+                        "sources": "Structured Database (PostgreSQL)"
+                    }
+
+        # 4. ROUTE B: Semantic Search (Source: FAISS)
+        # Note: We use the 'path' defined in Step 1 (No redundant overwriting)
+        if not os.path.exists(path):
+            return {"answer": "Context not found. Please ensure reports are uploaded.", "sources": ""}
+
+        # Load the correct index (Specific or Master)
         db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-
-        # Search for top 3 matches
-        relevant_docs = db.similarity_search(question, k=3)
-        context = "\n".join([doc.page_content for doc in relevant_docs])
+        relevant_docs = db.similarity_search(question, k=6)
+        context_parts = []
+        for doc in relevant_docs:
+            source = doc.metadata.get("report_id", "Unknown Report")
+            context_parts.append(f"[SOURCE: {source}]\n{doc.page_content}")
+        
+        context = "\n---\n".join(context_parts)
 
         prompt = ChatPromptTemplate.from_template("""
-        You are an AI Medical Assistant. Use the provided context to answer the user's question.
-        Guidelines:
-        1. Be concise and professional.
-        2. If the answer is not in the context, say: "This information is not available in the uploaded report."
-        3. Do not make up medical facts.
+        You are a Senior Medical AI. You are looking at data from one or more medical files.
         
-        Context: {context}
+        STRICT RULES:
+        1. Only answer based on ACTUAL patient results. 
+        2. IGNORE "Reference Ranges", "Example Results", or "Satisfactory/Unsatisfactory" examples unless they belong to the specific patient being discussed.
+        3. If the user asks for a name, look for "Patient Name" or "Name". 
+        4. If a name is "Diabetes Profile sample report", tell the user it looks like a sample/test file.
+        
+        Context:
+        {context}
+        
         Question: {question}
-        
         Answer:
         """)
 
         chain = prompt | self.llm
-        response = chain.invoke({"context": context, "question": question})
+        response = chain.invoke({
+            "context": context, 
+            "question": question
+        })
         
         return {
-            "answer": response.content,
-            "sources": context
+            "answer": response.content, 
+            "sources": "Master Knowledge Base" if not report_id else "Specific Report"
         }
-
-
+    
     def extract_patient_metadata(self, text: str):
         """Uses Llama 3.1 to extract structured patient details from raw text."""
         prompt = ChatPromptTemplate.from_template("""

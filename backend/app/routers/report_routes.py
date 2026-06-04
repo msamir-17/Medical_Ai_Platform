@@ -116,6 +116,9 @@ async def upload_report(
             print("⚠️ DEBUG: No 'glucose' key found in extracted_values. Skipping prediction.") 
 
         patient_metadata = rag_service.extract_patient_metadata(raw_text)
+
+        # Right before rag_service.index_report:
+        print(f"📁 UPLOAD DEBUG: Saving report to folder of user: {current_user_id}")
         # Chatbot memory mein dalna
         rag_service.index_report(raw_text, user_id=current_user_id,report_id=file_id) 
 
