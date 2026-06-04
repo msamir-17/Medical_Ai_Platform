@@ -25,7 +25,7 @@ const handleDelete = async (e: React.MouseEvent) => {
 };
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+    <div className="relative bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
       <div className="flex items-start justify-between mb-4">
         <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
           <FileText size={20} />
