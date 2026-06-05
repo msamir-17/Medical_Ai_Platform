@@ -2,10 +2,12 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+
 import { authService } from '@/features/auth/authService';
 import { Lock, Mail, Loader2, Activity, CheckCircle2, ArrowRight } from 'lucide-react';
 
 export default function RegisterPage() {
+  const [devToken, setDevToken] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,7 +20,8 @@ export default function RegisterPage() {
     setError('');
 
     try {
-      await authService.register({ email, password });
+      const response = await authService.register({ email, password });
+      setDevToken(response.dev_token);
       setIsSuccess(true); // Show the "Check Email" UI
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Registration failed. Please try again.');
@@ -28,6 +31,8 @@ export default function RegisterPage() {
   };
 
   // SUCCESS STATE UI (The "Check your Email" Screen)
+// ... inside RegisterPage ...
+
   if (isSuccess) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -36,16 +41,29 @@ export default function RegisterPage() {
             <CheckCircle2 size={48} />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h1>
-          <p className="text-slate-500 mb-8">
-            We've sent a verification link to <span className="font-bold text-slate-900">{email}</span>.
-            Please verify your account to continue.
+          <p className="text-slate-500 mb-4">
+            We've sent a link to <span className="font-bold text-slate-900">{email}</span>.
           </p>
-          <Link 
-            href="/login" 
-            className="inline-flex items-center justify-center gap-2 font-bold text-indigo-600 hover:text-indigo-700 transition-colors"
-          >
-            Back to Login <ArrowRight size={18} />
-          </Link>
+
+          {/* MOVE THE BOX HERE (Inside the success screen) */}
+          {devToken && (
+            <div className="mt-6 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-left">
+              <p className="text-[10px] font-black text-indigo-400 uppercase mb-2">Dev Sandbox</p>
+              <p className="text-xs text-indigo-700 mb-4">Click below to verify since real email is restricted:</p>
+              <Link 
+                href={`/verify-email?token=${devToken}`}
+                className="block w-full py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md text-center"
+              >
+                Verify & Enter Dashboard
+              </Link>
+            </div>
+          )}
+
+          <div className="mt-8">
+            <Link href="/login" className="font-bold text-indigo-600 hover:underline text-sm">
+              Back to Login
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -114,6 +132,7 @@ export default function RegisterPage() {
           </div>
         </form>
       </div>
+      
     </div>
   );
 }

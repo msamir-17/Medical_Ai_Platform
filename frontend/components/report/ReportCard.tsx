@@ -25,7 +25,7 @@ const handleDelete = async (e: React.MouseEvent) => {
 };
 
   return (
-    <div className="relative bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
       <div className="flex items-start justify-between mb-4">
         <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
           <FileText size={20} />
@@ -37,9 +37,23 @@ const handleDelete = async (e: React.MouseEvent) => {
         {filename}
       </h3>
       
-      <div className="flex items-center gap-1.5 text-slate-500 text-xs mb-4">
-        <Calendar size={14} />
-        <span>{formattedDate}</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1.5 text-slate-500 text-xs">
+          <Calendar size={14} />
+          <span>{formattedDate}</span>
+        </div>
+        <button 
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+          title="Delete Report"
+        >
+          {deleteMutation.isPending ? (
+            <Loader2 className="animate-spin" size={16} />
+          ) : (
+            <Trash2 size={16} />
+          )}
+        </button>
       </div>
 
       <Link 
@@ -48,18 +62,6 @@ const handleDelete = async (e: React.MouseEvent) => {
       >
         View Details <ArrowRight size={14} />
       </Link>
-      <button 
-        onClick={handleDelete}
-        disabled={deleteMutation.isPending}
-        className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all z-10"
-        title="Delete Report"
-      >
-      {deleteMutation.isPending ? (
-          <Loader2 className="animate-spin" size={16} />
-        ) : (
-          <Trash2 size={16} />
-        )}
-      </button>
     </div>
   );
 }

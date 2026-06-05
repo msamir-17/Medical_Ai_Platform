@@ -1,36 +1,187 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MediAI: Clinical Document Intelligence & Risk Analysis Platform
 
-## Getting Started
+Transform medical reports into structured insights using OCR, NLP, Machine Learning, and Retrieval-Augmented Generation (RAG).
 
-First, run the development server:
+## Overview
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+MediAI helps users understand and organize medical records that are stored as PDFs or scanned reports. The platform extracts clinical information, predicts disease risk, explains model decisions using SHAP, and allows users to ask questions about their reports through an AI-powered chat interface.
+
+---
+
+## Inspired by Industry Challenge
+
+This project was inspired by a healthcare problem highlighted in Razorpay's Fix My Itch initiative:
+
+> Patients often receive different diagnoses, treatment plans, or prescriptions from multiple doctors and struggle to understand whether these differences are expected or require further investigation.
+
+MediAI addresses part of this challenge by converting medical reports into structured data and providing a unified view of a patient's health history.
+
+---
+
+## How It Works
+
+```text
+Medical Report
+      │
+      ▼
+   EasyOCR
+      │
+      ▼
+ BioBERT NLP
+      │
+      ▼
+Structured Data
+      │
+ ┌────┴────┐
+ ▼         ▼
+Risk ML   FAISS
+Models    Vector DB
+ ▼         ▼
+SHAP      RAG Chat
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Key Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+* Upload PDF and image-based medical reports
+* Extract diseases, medications, and lab values
+* Predict diabetes and cardiac risk
+* Explain predictions with SHAP
+* AI chatbot for report-specific Q&A
+* Secure user-level data isolation
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## Engineering Challenges Solved
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Preventing RAG Hallucinations
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Created report-specific vector indexes so the chatbot only retrieves information from the selected report.
 
-## Deploy on Vercel
+### OCR Quality Issues
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Switched to a vision-based OCR pipeline to improve extraction accuracy on scanned clinical reports.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Medical Term Normalization
+
+Used RapidFuzz to correct OCR spelling mistakes in medical terminology before NLP processing.
+
+---
+
+## AI & ML Stack
+
+* EasyOCR for document text extraction
+* BioBERT for medical entity recognition
+* XGBoost for disease risk prediction
+* SHAP for model explainability
+* Llama 3.1 8B for RAG-based conversations
+* FAISS for vector search
+
+---
+
+## Performance
+
+| Metric               | Result      |
+| -------------------- | ----------- |
+| OCR Accuracy         | ~99%        |
+| Cardiac Risk ROC-AUC | 95.1%       |
+| Cardiac Risk Recall  | 96%         |
+| Diabetes Accuracy    | 81.5%       |
+| Processing Time      | < 2 seconds |
+
+---
+
+## Tech Stack
+
+**Frontend**
+
+* Next.js 14
+* TypeScript
+* Tailwind CSS
+* Zustand
+
+**Backend**
+
+* FastAPI
+* SQLAlchemy
+* Pydantic
+
+**Database**
+
+* PostgreSQL (Supabase)
+* FAISS
+
+**Infrastructure**
+
+* Docker
+* Docker Compose
+* Resend
+
+---
+
+## Security
+
+* JWT Authentication
+* User-level data isolation
+* Secure environment variables
+* Protected API endpoints
+
+---
+
+## Trade-offs
+
+* Chose XGBoost over deep learning because healthcare datasets were relatively small.
+* Used FAISS for simplicity and low infrastructure cost during development.
+* Prioritized explainability through SHAP rather than using black-box models.
+
+---
+
+## Future Improvements
+
+* Longitudinal health tracking
+* Async OCR processing with Celery
+* Distributed vector database support
+* Doctor collaboration and secure report sharing
+
+---
+
+## Screenshots
+
+### Dashboard
+
+![Dashboard](images/dashboard.png)
+
+### SHAP Explanation
+
+![SHAP](images/shap.png)
+
+### AI Chat
+
+![Chat](images/chat.png)
+
+---
+
+## Local Setup
+
+```bash
+git clone <repo-url>
+cd mediai
+
+docker-compose up --build
+```
+
+Required environment variables:
+
+```env
+DATABASE_URL=
+GROQ_API_KEY=
+JWT_SECRET=
+RESEND_API_KEY=
+```
+
+---
+
+## Tech Focus
+
+This project explores how OCR, biomedical NLP, machine learning, explainability, and RAG can be combined to build practical healthcare applications.
