@@ -112,17 +112,23 @@ class OCRService:
 
 
         patterns = {
-            "glucose": r"[Gg]lucose[:\s]+(\d+\.?\d*)",
+            "glucose": r"glucose[^0-9]+(\d+\.?\d*)",
 
-            "hb": r"[Hh]emoglobin[:\s]+(\d+\.?\d*)",
+            "hb": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
 
-            "ph": r"[Pp][Hh][:\s]+(\d+\.?\d*)",
+            "cholesterol": r"cholesterol[^0-9]+(\d+\.?\d*)",
 
-            "pco2": r"[Pp][Cc][Oo]2[:\s]+(\d+\.?\d*)",
+            "creatinine": r"creatinine[^0-9]+(\d+\.?\d*)",
 
-            "po2": r"[Pp][Oo]2[:\s]+(\d+\.?\d*)",
             
-            "bmi": r"[Bb][Mm][Ii][:\s]+(\d+\.?\d*)",
+
+            "ph": r"ph[^0-9]+(\d+\.?\d*)",
+
+            "pco2": r"pco2[^0-9]+(\d+\.?\d*)",
+
+            "po2": r"po2[^0-9]+(\d+\.?\d*)",
+
+            "bmi": r"bmi[^0-9]+(\d+\.?\d*)",
 
             "haemoglobin": r"[Hh]aemoglobin[:\s]+(\d+\.?\d*)",
 
@@ -137,7 +143,7 @@ class OCRService:
 
         for key, pattern in patterns.items():
 
-            match = re.search(pattern, text)
+            match = re.search(pattern, text, re.IGNORECASE) 
 
             if match:
                 extracted[key] = match.group(1)
