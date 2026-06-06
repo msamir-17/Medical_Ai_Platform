@@ -10,27 +10,30 @@ export default function ReportsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <Loader2 className="animate-spin text-indigo-600" size={48} />
+        <Loader2 className="animate-spin text-[--color-primary-500]" size={40} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <header className="flex justify-between items-end">
+    <div className="space-y-6 md:space-y-8 pb-10 md:pb-0">
+      {/* Header — responsive stacking */}
+      <header className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900">Medical Vault</h1>
-          <p className="text-slate-500 font-medium">Access and manage all your uploaded documents.</p>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[--color-text-primary]">Medical Vault</h1>
+          <p className="text-[--color-text-secondary] font-medium text-sm md:text-base">Access and manage all your uploaded documents.</p>
         </div>
       </header>
 
       {reports?.length === 0 ? (
-        <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed">
-          <FolderOpen className="mx-auto text-slate-300 mb-4" size={48} />
-          <p className="text-slate-500">No reports found in your vault.</p>
+        /* Empty State */
+        <div className="text-center py-12 md:py-20 bg-[--color-bg-secondary] rounded-2xl md:rounded-3xl border-2 border-dashed border-[--color-border]">
+          <FolderOpen className="mx-auto text-[--color-text-muted] mb-4 opacity-50" size={40} />
+          <p className="text-[--color-text-secondary] text-sm md:text-base">No reports found in your vault.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        /* Report Cards Grid — progressive columns with ultra-wide support */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-6">
           {reports?.map((report: any) => (
             <ReportCard 
               key={report.id}

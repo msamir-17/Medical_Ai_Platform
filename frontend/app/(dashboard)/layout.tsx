@@ -12,7 +12,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) 
 {
-  const { token, _hasHydrated } = useAuthStore(); // Get both token and hydration status
+  const { token, _hasHydrated } = useAuthStore();
   const router = useRouter();
   const [isClient, setIsClient] = useState(false);
 
@@ -21,13 +21,11 @@ export default function DashboardLayout({
   }, []);
 
   useEffect(() => {
-    // SIRF tab redirect karo jab store load ho chuka ho AUR token missing ho
     if (_hasHydrated && !token) {
       router.push('/login');
     }
   }, [_hasHydrated, token, router]);
 
-    // Jab tak hydration complete nahi hoti, tab tak loader dikhao
   if (!isClient || !_hasHydrated) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-white">
@@ -36,17 +34,28 @@ export default function DashboardLayout({
     );
   }
 
-  if (!token) return null; // Prevent flickering while redirecting
+  if (!token) return null;
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[--color-bg-primary]">
-      {/* 1. The Fixed Sidebar */}
+    <div className="min-h-screen flex flex-col md:flex-row bg-gray-50/40">
       <MobileNav />
       <Sidebar />
 
-      {/* 2. The Main Content Area */}
-      <main className="flex-1 md:pl-60 p-6 lg:p-10 transition-all">
-        <div className="max-w-5xl mx-auto">
+      {/*
+        IMPORTANT: On md+ the sidebar is `fixed w-60` (240px).
+        We must NOT let shorthand `p-*` override `pl-60`.
+        So we set left padding separately via ml-60 on md+,
+        and use pr/pt/pb for the content breathing room.
+      */}
+      <main className="
+        flex-1
+        min-h-[calc(100vh-56px)] md:min-h-screen
+        p-4
+        md:ml-60 md:p-6
+        lg:p-10
+        transition-all duration-200
+      ">
+        <div className="max-w-6xl 2xl:max-w-7xl mx-auto">
           {children}
         </div>
       </main>

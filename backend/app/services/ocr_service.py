@@ -1,7 +1,8 @@
 import fitz
 import easyocr
 import re
-
+from PIL import Image, ImageOps, ImageEnhance
+import io
 
 class OCRService:
 
@@ -104,10 +105,9 @@ class OCRService:
             text = text.replace(broken, fixed)
 
         return text.strip()
-    
+   # -----------------------------------------
+    # MEDICAL VALUE EXTRACTION
     # -----------------------------------------
-# MEDICAL VALUE EXTRACTION
-# -----------------------------------------
     def extract_medical_values(self, text: str):
 
 
@@ -150,7 +150,6 @@ class OCRService:
 
         return extracted
 
-
     def interpret_markers(self, values: dict):
         """Provides human-readable meaning for lab markers."""
         # Industry Standard: Reference ranges (Common values)
@@ -189,6 +188,72 @@ class OCRService:
                     "color": color
                 })
         return interpreted
+    
+    def _enhance_image(self, img_bytes):
+        """LAYER 1: Pixel Pre-processing. Standardizes contrast and removes color noise."""
+        img = Image.open(io.BytesIO(img_bytes)).convert('L') # Convert to Grayscale
+        img = ImageOps.autocontrast(img)
+        img = ImageEnhance.Sharpness(img).enhance(2.0)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return buf.getvalue()
+
+    def _reconstruct_layout(self, ocr_results):
+        """LAYER 2 & 3: Clusters words into logical lines using Y-coordinate proximity."""
+        # results format: [([box], text, confidence), ...]
+        if not ocr_results: return ""
+
+        # 1. Sort by Y-coordinate (Top to Bottom)
+        ocr_results.sort(key=lambda x: x[0][0][1])
+
+        lines = []
+        if ocr_results:
+            current_line = [ocr_results[0]]
+            
+            for i in range(1, len(ocr_results)):
+                prev_y = current_line[-1][0][0][1]
+                curr_y = ocr_results[i][0][0][1]
+                
+                # If vertical distance < 10 pixels, they are on the same line
+                if abs(curr_y - prev_y) < 10:
+                    current_line.append(ocr_results[i])
+                else:
+                    # Sort the finished line by X-coordinate (Left to Right)
+                    current_line.sort(key=lambda x: x[0][0][0])
+                    lines.append(current_line)
+                    current_line = [ocr_results[i]]
+            
+            # Add the last line
+            current_line.sort(key=lambda x: x[0][0][0])
+            lines.append(current_line)
+
+        # Convert to structured text representation
+        structured_text = ""
+        for line in lines:
+            line_text = " | ".join([res[1] for res in line]) # Use '|' as column separator
+            structured_text += line_text + "\n"
+        
+        return structured_text
+
+    def extract_text(self, file_path: str):
+        """The Main Entry Point: Coordinates the 7-Layer logic."""
+        doc = fitz.open(file_path)
+        full_structured_text = ""
+
+        for page in doc:
+            pix = page.get_pixmap(dpi=150)
+            # Layer 1: Enhancement
+            enhanced_img = self._enhance_image(pix.tobytes("png"))
+            
+            # Layer 2: Raw Extraction
+            raw_results = self.reader.readtext(enhanced_img, detail=1)
+            
+            # Layer 3 & 4: Structural Reconstruction
+            page_text = self._reconstruct_layout(raw_results)
+            full_structured_text += page_text + "\n--- Page Break ---\n"
+
+        doc.close()
+        return full_structured_text
 
 # Singleton Instance
 ocr_service = OCRService()

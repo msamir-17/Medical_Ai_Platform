@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Calendar, ArrowRight , Trash2 ,Loader2  } from 'lucide-react';
+import { FileText, Calendar, ArrowRight, Trash2, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useDeleteReport } from '@/features/reports/useReports';
 
@@ -10,43 +10,51 @@ interface ReportCardProps {
 }
 
 export function ReportCard({ id, filename, date }: ReportCardProps) {
-  // Format the date into something readable
   const formattedDate = new Date(date).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric'
   });
 
-const deleteMutation = useDeleteReport();
+  const deleteMutation = useDeleteReport();
 
-const handleDelete = async (e: React.MouseEvent) => {
-  e.preventDefault(); // Stop navigation to detail page
-  if (confirm("Are you sure you want to delete this report?")) {
-    deleteMutation.mutate(id);
-  }
-};
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (confirm("Are you sure you want to delete this report?")) {
+      deleteMutation.mutate(id);
+    }
+  };
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+    <div className="
+      bg-white p-5 rounded-2xl border border-slate-100 shadow-sm 
+      hover:shadow-lg hover:-translate-y-0.5
+      transition-all duration-200 group
+      flex flex-col
+    ">
+      {/* Top Row: Icon + Badge */}
       <div className="flex items-start justify-between mb-4">
-        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
           <FileText size={20} />
         </div>
-        <span className="text-[10px] font-bold text-slate-400 uppercase">Report</span>
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Report</span>
       </div>
-      
-      <h3 className="font-bold text-slate-900 truncate mb-1" title={filename}>
+
+      {/* Filename */}
+      <h3 className="font-bold text-slate-900 truncate mb-1 text-sm flex-1" title={filename}>
         {filename}
       </h3>
-      
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-1.5 text-slate-500 text-xs">
-          <Calendar size={14} />
+
+      {/* Date + Delete Row */}
+      <div className="flex items-center justify-between mb-4 mt-2">
+        <div className="flex items-center gap-1.5 text-slate-500 text-xs font-medium">
+          <Calendar size={14} className="text-slate-400" />
           <span>{formattedDate}</span>
         </div>
-        <button 
+        <button
           onClick={handleDelete}
           disabled={deleteMutation.isPending}
-          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+          className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-150"
           title="Delete Report"
+          aria-label={`Delete report ${filename}`}
         >
           {deleteMutation.isPending ? (
             <Loader2 className="animate-spin" size={16} />
@@ -56,9 +64,21 @@ const handleDelete = async (e: React.MouseEvent) => {
         </button>
       </div>
 
-      <Link 
+      {/* View Details Button
+          Base: indigo-50 bg with indigo-600 text
+          Hover (via group): solid indigo-600 bg with white text
+          — both states are fully visible and high-contrast */}
+      <Link
         href={`/reports/${id}`}
-        className="w-full py-2 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold flex items-center justify-center gap-2 group-hover:bg-indigo-600 group-hover:text-white transition-colors"
+        className="
+          w-full py-2.5
+          rounded-xl text-xs font-bold
+          flex items-center justify-center gap-2
+          bg-indigo-50 text-indigo-600
+          group-hover:bg-indigo-600 group-hover:text-white
+          transition-all duration-200
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30
+        "
       >
         View Details <ArrowRight size={14} />
       </Link>

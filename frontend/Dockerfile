@@ -5,6 +5,8 @@ WORKDIR /app
 
 # Building for production (Inject environment variable)
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+# ARG NEXT_PUBLIC_API_URL=https://samirk10-medical-ai-backend.hf.space
+
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 COPY package*.json ./
