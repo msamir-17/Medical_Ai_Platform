@@ -48,7 +48,7 @@ export function ChatWindow() {
     <div className="flex flex-col h-full bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-xl">
 
       {/* ── TOP BAR ─────────────────────────────────── */}
-      <div className="shrink-0 flex items-center justify-between gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100">
+      <div className="shrink-0 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 px-4 md:px-5 py-3 bg-slate-50 border-b border-slate-100">
         {/* Left: Knowledge Base selector */}
         <div className="flex items-center gap-2.5 min-w-0">
           <Database size={15} className="text-slate-400 shrink-0" />
@@ -56,7 +56,7 @@ export function ChatWindow() {
             Knowledge Base:
           </span>
           <select
-            className="bg-transparent border-none text-xs font-bold text-indigo-600 outline-none cursor-pointer"
+            className="bg-transparent border-none text-xs font-bold text-primary-600 outline-none cursor-pointer truncate"
             value={selectedReportId}
             onChange={(e) => setSelectedReportId(e.target.value)}
             aria-label="Select report for context"
@@ -70,8 +70,8 @@ export function ChatWindow() {
 
         {/* Right: AI Status */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">AI Online</span>
+          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">AI Online</span>
         </div>
       </div>
 
@@ -81,8 +81,8 @@ export function ChatWindow() {
         {/* Empty State */}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-slate-300 py-16">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
-              <Bot className="text-indigo-300" size={32} />
+            <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
+              <Bot className="text-primary-300" size={32} />
             </div>
             <p className="font-semibold text-slate-400 text-sm">
               Select a report or ask a general health question.
@@ -99,21 +99,21 @@ export function ChatWindow() {
 
             {/* AI Avatar */}
             {msg.role === 'ai' && (
-              <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
-                <Sparkles size={14} className="text-indigo-600" />
+              <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles size={14} className="text-primary-600" />
               </div>
             )}
 
             {/* Bubble
-                USER  → #6366F1 (primary-500) background, white text
-                AI    → #EEF2FF (primary-50)  background, #111827 text, blue-100 border
+                USER  → primary-600 background, white text
+                AI    → primary-50 background, text-primary text, primary-100 border
             */}
             <div className={`
               max-w-[80%] md:max-w-[72%]
               px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm
               ${msg.role === 'user'
-                ? 'bg-indigo-600 text-white rounded-br-sm'
-                : 'bg-indigo-50 text-slate-800 border border-indigo-100 rounded-bl-sm'
+                ? 'bg-primary-600 text-white rounded-br-sm'
+                : 'bg-primary-50 text-slate-800 border border-primary-100 rounded-bl-sm'
               }
             `}>
               <p className="break-words">{msg.content}</p>
@@ -121,7 +121,7 @@ export function ChatWindow() {
 
             {/* User Avatar */}
             {msg.role === 'user' && (
-              <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-xl bg-primary-600 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-white font-black text-xs">U</span>
               </div>
             )}
@@ -131,11 +131,11 @@ export function ChatWindow() {
         {/* Typing Indicator */}
         {isLoading && (
           <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
-              <Sparkles size={14} className="text-indigo-600" />
+            <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
+              <Sparkles size={14} className="text-primary-600" />
             </div>
-            <div className="bg-indigo-50 border border-indigo-100 px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-2">
-              <Loader2 className="animate-spin text-indigo-500" size={16} />
+            <div className="bg-primary-50 border border-primary-100 px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-2">
+              <Loader2 className="animate-spin text-primary-500" size={16} />
               <span className="text-xs text-slate-500 font-medium">Analyzing your records…</span>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function ChatWindow() {
 
       {/* ── INPUT AREA ──────────────────────────────── */}
       <div className="shrink-0 p-4 bg-white border-t border-slate-100">
-        <div className="flex gap-3 items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-150">
+        <div className="flex gap-3 items-center bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/10 transition-all duration-150">
           <input
             className="flex-1 bg-transparent border-none outline-none text-sm text-slate-800 placeholder:text-slate-400 py-2"
             placeholder="Type your medical query..."
@@ -158,11 +158,11 @@ export function ChatWindow() {
             onClick={handleSend}
             disabled={isLoading || !input.trim()}
             className="
-              p-2.5 bg-indigo-600 text-white rounded-xl
-              hover:bg-indigo-700
+              p-2.5 bg-primary-600 text-white rounded-xl
+              hover:bg-primary-700
               disabled:opacity-40 disabled:cursor-not-allowed
               transition-all duration-150
-              shadow-md shadow-indigo-200
+              shadow-md shadow-primary-200
               flex items-center justify-center shrink-0
               min-w-[40px] min-h-[40px]
             "
