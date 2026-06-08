@@ -4,17 +4,18 @@ import numpy as np
 import pandas as pd
 import shap
 
+
+from app.utils.model_loader import load_model_from_hub
 # 1. Path setting
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODEL_PATH = os.path.join(BASE_DIR, "ml_models", "diabetes_model.pkl")
-SCALER_PATH = os.path.join(BASE_DIR, "ml_models", "scaler.pkl")
+# BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# MODEL_PATH = os.path.join(BASE_DIR, "ml_models", "diabetes_model.pkl")
+# SCALER_PATH = os.path.join(BASE_DIR, "ml_models", "scaler.pkl")
 
 class DiabetesService:
     def __init__(self):
         print("Loading ML Models & SHAP Explainer...")
-        self.model = joblib.load(MODEL_PATH)
-        self.scaler = joblib.load(SCALER_PATH)
-        # Fix: Initialize explainer at startup
+        self.model = load_model_from_hub("diabetes_model.pkl")
+        self.scaler = load_model_from_hub("scaler.pkl")
         self.explainer = shap.TreeExplainer(self.model)
 
     def _prepare_features(self, data: dict):

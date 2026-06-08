@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-data/raw/
+data/raw/backend/ml_models/
+*.pkl

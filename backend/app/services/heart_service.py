@@ -2,22 +2,16 @@ import joblib
 import os
 import pandas as pd
 import shap
-
+from app.utils.model_loader import load_model_from_hub
 # Paths following ARCHITECTURE.md
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Note: Ensure you have these files in your ml_models folder from your training phase
-MODEL_PATH = os.path.join(BASE_DIR, "ml_models", "heart_model.pkl")
-SCALER_PATH = os.path.join(BASE_DIR, "ml_models", "scaler_heart.pkl")
+
 
 class HeartService:
     def __init__(self):
-        if os.path.exists(MODEL_PATH):
-            print("Loading Heart Risk Models...")
-            self.model = joblib.load(MODEL_PATH)
-            self.scaler = joblib.load(SCALER_PATH)
-            self.explainer = shap.TreeExplainer(self.model)
-        else:
-            print("⚠️ Heart model files not found. Cardiac prediction disabled.")
+        print("Loading ML Models & SHAP Explainer...")
+        self.model = load_model_from_hub("heart_model.pkl")
+        self.scaler = load_model_from_hub("scaler_heart.pkl")
+        self.explainer = shap.TreeExplainer(self.model)
 
     def predict_heart_risk(self, data: dict):
         """
