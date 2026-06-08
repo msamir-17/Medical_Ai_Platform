@@ -1,0 +1,41 @@
+name: Deploy Backend to Hugging Face
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-hf:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Clone Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone https://user:${HF_TOKEN}@huggingface.co/spaces/samirk10/medical-ai-backend hf-space
+
+      - name: Sync Backend Files
+        run: |
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='uploads' \
+            --exclude='vector_stores' \
+            backend/ hf-space/
+
+      - name: Commit and Push to HF
+        run: |
+          cd hf-space
+
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
+          git add .
+
+          git diff --cached --quiet || git commit -m "Auto deploy from GitHub"
+
+          git push
