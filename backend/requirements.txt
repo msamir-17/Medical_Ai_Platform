@@ -44,3 +44,4 @@ sentence-transformers
 
 # --- Communication ---
 resend
+scikit-learn==1.8.0
