@@ -1,5 +1,5 @@
 import joblib
-import os
+import os   
 import numpy as np
 import pandas as pd
 import shap
@@ -15,7 +15,7 @@ class DiabetesService:
     def __init__(self):
         print("Loading ML Models & SHAP Explainer...")
         self.model = load_model_from_hub("diabetes_model.pkl")
-        self.scaler = load_model_from_hub("scaler.pkl")
+        self.scaler = load_model_from_hub("scaler_diabetes.pkl")
         self.explainer = shap.TreeExplainer(self.model)
 
     def _prepare_features(self, data: dict):
