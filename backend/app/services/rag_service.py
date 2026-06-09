@@ -122,6 +122,8 @@ class RAGService:
 
         prompt = ChatPromptTemplate.from_template("""
         You are a Senior Medical AI. You are looking at data from one or more medical files.
+        You are analyzing the patient's ENTIRE medical history across MULTIPLE reports.
+
         
         STRICT RULES:
         1. Only answer based on ACTUAL patient results. 
@@ -133,7 +135,14 @@ class RAGService:
         {context}
         
         Question: {question}
-        Answer:
+        
+        STRICT CLINICAL GUIDELINES:
+        1. TREND ANALYSIS: If you see the same marker (e.g., HbA1c, Glucose) in multiple reports, explicitly compare them. Mention if values are increasing, decreasing, or stable.
+        2. CONFLICT DETECTION: If different reports provide contradictory information (e.g., different blood groups or conflicting diagnoses), highlight this as a "High-Priority Warning."
+        3. DATE AWARENESS: Always prioritize information from the most recent report based on dates mentioned.
+        4. STRUCTURE: If the user asks for a summary, provide a "Longitudinal Health Timeline."
+
+        Answer in a professional, empathetic, and clear manner (English/Hinglish):
         """)
 
         chain = prompt | self.llm
