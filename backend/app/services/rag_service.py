@@ -30,11 +30,14 @@ class RAGService:
 
     def index_report(self, text: str, user_id: str, report_id: str):
         chunks = self.text_splitter.split_text(text)
+
+        # --- THE FIX: ADD METADATA TO EVERY CHUNK ---
+        metadatas = [{"report_id": report_id, "user_id": user_id} for _ in chunks]
         
         # 1. Save Specific Report Index (Existing Logic)
         report_path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
         os.makedirs(report_path, exist_ok=True)
-        db = FAISS.from_texts(chunks, self.embeddings)
+        db = FAISS.from_texts(chunks, self.embeddings, metadatas=metadatas)
         db.save_local(report_path)
 
         # 2. THE FIX: Create/Update Master User Index
@@ -44,13 +47,11 @@ class RAGService:
         if os.path.exists(os.path.join(master_path, "index.faiss")):
             # If master exists, add new report chunks to it
             master_db = FAISS.load_local(master_path, self.embeddings, allow_dangerous_deserialization=True)
-            master_db.add_texts(chunks)
+            master_db.add_texts(chunks,metadatas=metadatas)
             master_db.save_local(master_path)
         else:
             # First report? Create the master index
-            db.save_local(master_path)
-            
-        print(f"✅ MASTER INDEX UPDATED at {master_path}")
+            db.save_local(master_path)            
         return len(chunks)
 
     def classify_query(self, question: str):
@@ -112,13 +113,24 @@ class RAGService:
 
         # Load the correct index (Specific or Master)
         db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+
+        # Get more chunks to allow filtering
+        raw_docs = db.similarity_search(question, k=10) 
+
         relevant_docs = db.similarity_search(question, k=6)
-        context_parts = []
+        grouped_context = {}
         for doc in relevant_docs:
             source = doc.metadata.get("report_id", "Unknown Report")
-            context_parts.append(f"[SOURCE: {source}]\n{doc.page_content}")
+
+            if source not in grouped_context:
+                grouped_context[source] = []
+            grouped_context[source].append(doc.page_content)
         
-        context = "\n---\n".join(context_parts)
+        formatted_context = ""
+        for source, text_list in grouped_context.items():
+            formatted_context += f"\n=== DATA FROM REPORT: {source} ===\n"
+            formatted_context += "\n".join(text_list)
+
 
         prompt = ChatPromptTemplate.from_template("""
         You are a Senior Medical AI Consultant. You are analyzing a patient's medical history.
@@ -148,7 +160,7 @@ class RAGService:
 
         chain = prompt | self.llm
         response = chain.invoke({
-            "context": context, 
+            "context": formatted_context, 
             "question": question
         })
         
