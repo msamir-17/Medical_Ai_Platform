@@ -107,53 +107,45 @@ class RAGService:
         avg_score = score / (len(all_metadata) - 1)
         return avg_score, reasons
 
-    def query_report(self, question: str, user_id: str, report_id: str = None, all_patient_info: list = None):
-        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
-        
-        # --- NEW: IDENTITY GUARDRAIL LOGIC ---
-        if not report_id and all_patient_info:
-            score, gaps = self.verify_patient_identity(all_patient_info)
-            if score < 85: # Threshold increased to 85% for high safety
-                return {
-                    "answer": f"""
-                        ### ⚠️ Patient Identity Mismatch Detected
-                        **Action Blocked for Safety**
-
-                        My system has detected that the uploaded reports belong to different individuals:
-                        - **Identified Gaps:** {', '.join(gaps)}
-                        - **Confidence Score:** {score}%
-
-                        **Why am I seeing this?**
-                        Comparing medical data (like Hemoglobin or Glucose) across different patients can lead to dangerous clinical conclusions. For your safety, I cannot generate a combined timeline or trend analysis for unrelated individuals.
-
-                        **How to fix:**
-                        Please select a specific report from the dropdown or ensure all uploaded files belong to the same patient.
-                        """, 
-                    "sources": "Safety Guardrail Engine",
-                    "identity_score": score
-                }
-        # -------------------------------------
-        # 2. CONTEXT BUILDING (If it passes the gate)
+    def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_patient_info: list = None):
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         all_contexts = []
+        
+        # --- 1. IDENTITY & SAFETY GATE (Trigger for Multi-report modes) ---
+        identity_warning = ""
+        if mode in ["compare", "overview"] and all_patient_info and len(all_patient_info) > 1:
+            score, gaps = self.verify_patient_identity(all_patient_info)
+            if score < 85:
+                return {
+                    "answer": f"### ⚠️ Clinical Safety Block\nIdentity mismatch detected (Score: {score}%).\n**Gaps:** {', '.join(gaps)}\n\nPlease select reports belonging to the same person.",
+                    "sources": "Safety Engine"
+                }
 
-        if report_id and report_id != "":
-            paths_to_search = [os.path.join(user_folder, f"report_{report_id}")]
-        else:
+        # --- 2. DYNAMIC PATH IDENTIFICATION (The "List-to-String" Fix) ---
+        if mode == "overview":
+            # Sabhi available report folders dhundo
             if not os.path.exists(user_folder):
                  return {"answer": "No records found.", "sources": ""}
             paths_to_search = [os.path.join(user_folder, d) for d in os.listdir(user_folder) if d.startswith("report_")]
+        else:
+            # Single ya Compare mode: Use the IDs provided
+            # FIX: Iterate through list instead of putting list in a string
+            paths_to_search = [os.path.join(user_folder, f"report_{rid}") for rid in report_ids if rid]
 
+        # --- 3. CONTEXT RETRIEVAL (Fetching real text from FAISS) ---
         for path in paths_to_search:
             if os.path.exists(path):
                 db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+                # Har report se top 3 relevant chunks lo
                 docs = db.similarity_search(question, k=3)
                 report_label = path.split("report_")[-1][:8]
-                all_contexts.append(f"\n[STRICT SOURCE: Report_{report_label}]\n" + "\n".join([d.page_content for d in docs]))
+                all_contexts.append(f"\n[DATA FROM REPORT ID: {report_label}]\n" + "\n".join([d.page_content for d in docs]))
 
         context = "\n".join(all_contexts)
+        if not context.strip():
+            return {"answer": "I found the files, but they contain no readable text. Please re-upload.", "sources": "OCR Check"}
 
-        # 3. ANTI-HALLUCINATION PROMPT (Refined for Reference Ranges)
+        # --- 4. THE MASTER PROMPT ---
         prompt = ChatPromptTemplate.from_template("""
         You are a Clinical Data Integrity Agent. 
         
@@ -164,27 +156,21 @@ class RAGService:
         {question}
 
         STRICT CLINICAL PROTOCOL:
-        1. DATA EXTRACTION: Only use values listed under "Result" or "Value". 
-        2. **STRICTLY IGNORE** reference ranges, normal intervals (e.g., 11.0-16.0), or bio-ref intervals as patient results. 
-        3. DATA MISMATCH: If the context contains multiple sources but the results are for different names, DO NOT summarize them into one timeline.
-        4. ACCURACY: If a number is followed by a range (e.g., '12 [11-16]'), the result is 12. Do not use 11 or 16.
+        1. Only use values listed under "Result" or "Value". 
+        2. STRICTLY IGNORE reference ranges (e.g., 11.0-16.0) as patient results.
+        3. If multiple reports are present, summarize them report-by-report.
+        4. Use Markdown for structured output (headers, bold, tables).
 
-        Answer in a professional, structured Markdown format:
+        Answer:
         """)
 
-       
-
         chain = prompt | self.llm
-        response = chain.invoke({
-            "context": context, 
-            "question": question, 
-        })
+        response = chain.invoke({"context": context, "question": question})
         
         return {
             "answer": response.content, 
-            "sources": f"Analyzed {len(paths_to_search)} reports"
+            "sources": f"Analyzed {len(paths_to_search)} clinical records"
         }
-    
 
     def extract_patient_metadata(self, text: str):
         """Uses Llama 3.1 to extract structured patient details from raw text."""
