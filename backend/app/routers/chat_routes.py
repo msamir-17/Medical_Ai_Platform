@@ -13,26 +13,24 @@ class ChatRequest(BaseModel):
     question: str
     report_id: Optional[str] = None
 
+
 @router.post("/query")
-async def ask_question(
-    request: ChatRequest,
-    db: Session = Depends(get_db),
-    current_user_id: str = Depends(get_current_user)
-    ):
-
-    # 1. Fetch the report record from Supabase first
-    report = db.query(Report).filter(Report.id == request.report_id).first()
+async def ask_question(request: ChatRequest, db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):
     
-    # 2. Pass the DB data to the service for "Numeric Routing"
-    report_data = {
-        "extracted_values": report.extracted_values if report else []
-    }
+    # 1. Sabhi reports ka metadata fetch karein comparison ke liye
+    if not request.report_id:
+        reports = db.query(Report).filter(Report.user_id == current_user_id).all()
+        all_info = [r.patient_info for r in reports if r.patient_info]
+    else:
+        # Single report mode
+        report = db.query(Report).filter(Report.id == request.report_id).first()
+        all_info = [report.patient_info] if report else []
 
+    # 2. Service ko metadata ke saath call karein
     result = rag_service.query_report(
-        request.question, 
-        current_user_id, 
-        request.report_id, 
-        db_report_data=report_data
+        question=request.question, 
+        user_id=current_user_id, 
+        report_id=request.report_id,
+        all_patient_info=all_info
     )
     return result
-

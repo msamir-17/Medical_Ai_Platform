@@ -3,13 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import shap
-
-
 from app.utils.model_loader import load_model_from_hub
-# 1. Path setting
-# BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# MODEL_PATH = os.path.join(BASE_DIR, "ml_models", "diabetes_model.pkl")
-# SCALER_PATH = os.path.join(BASE_DIR, "ml_models", "scaler.pkl")
 
 class DiabetesService:
     def __init__(self):

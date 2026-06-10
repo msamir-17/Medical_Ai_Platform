@@ -5,7 +5,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from langchain_core.output_parsers import JsonOutputParser
-
+from rapidfuzz import process
 
 from dotenv import load_dotenv
 
@@ -76,99 +76,116 @@ class RAGService:
         except:
             # FIX: Use empty string instead of None
             return {"category": "GENERAL", "target_marker": ""}
+    
+    def verify_patient_identity(self, all_metadata: list):
+        """Calculates if all reports belong to the same person."""
+        if not all_metadata or len(all_metadata) <= 1:
+            return 100, ""
 
-    def query_report(self, question: str, user_id: str, report_id: str = None, db_report_data: dict = None):
-        """
-        The Router Logic: Routes the question to the best data source.
-        """
-        # 1. Decide Path and System Role
-        if report_id and report_id != "":
-            path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
-        else:
-            path = os.path.join(self.vector_db_path, f"user_{user_id}", "master_index")
+        score = 0
+        base = all_metadata[0]
+        reasons = []
 
-        if not os.path.exists(path):
-            return {"answer": "I don't have these reports in my memory yet. Please re-upload.", "sources": ""}
+        for other in all_metadata[1:]:
+            # 1. Patient ID Check
+            if base.get("patient_id") == other.get("patient_id") and base.get("patient_id") != "N/A":
+                score += 60
+            
+            # 2. Name Similarity (Using rapidfuzz)
+            name_match = process.extractOne(base.get("name", ""), [other.get("name", "")])
+            if name_match and name_match[1] > 85:
+                score += 25
+            else:
+                reasons.append(f"Names differ: {base.get('name')} vs {other.get('name')}")
 
+            # 3. Gender Check
+            if base.get("gender") == other.get("gender"):
+                score += 15
+            else:
+                reasons.append("Gender mismatch detected")
 
-        # 2. Classify the intent (Numerical vs General)
-        intent = self.classify_query(question)
-        category = intent.get("category", "GENERAL")
-        marker_raw = intent.get("target_marker", "")
-        marker = marker_raw.lower() if marker_raw else ""
+        avg_score = score / (len(all_metadata) - 1)
+        return avg_score, reasons
 
-        # 3. ROUTE A: Numeric Data (Source: Postgres/Supabase)
-        if category == "NUMERIC" and db_report_data:
-            for item in db_report_data.get("extracted_values", []):
-                if marker in item['marker'].lower() or item['marker'].lower() in marker:
-                    return {
-                        "answer": f"Your {item['marker']} level is {item['value']} {item['unit']}. This is considered {item['status']}.",
-                        "sources": "Structured Database (PostgreSQL)"
-                    }
-
-        # 4. ROUTE B: Semantic Search (Source: FAISS)
-        # Note: We use the 'path' defined in Step 1 (No redundant overwriting)
-        if not os.path.exists(path):
-            return {"answer": "Context not found. Please ensure reports are uploaded.", "sources": ""}
-
-        # Load the correct index (Specific or Master)
-        db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-
-        # Get more chunks to allow filtering
-        raw_docs = db.similarity_search(question, k=10) 
-
-        relevant_docs = db.similarity_search(question, k=6)
-        grouped_context = {}
-        for doc in relevant_docs:
-            source = doc.metadata.get("report_id", "Unknown Report")
-
-            if source not in grouped_context:
-                grouped_context[source] = []
-            grouped_context[source].append(doc.page_content)
+    def query_report(self, question: str, user_id: str, report_id: str = None, all_patient_info: list = None):
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
-        formatted_context = ""
-        for source, text_list in grouped_context.items():
-            formatted_context += f"\n=== DATA FROM REPORT: {source} ===\n"
-            formatted_context += "\n".join(text_list)
+        # --- NEW: IDENTITY GUARDRAIL LOGIC ---
+        if not report_id and all_patient_info:
+            score, gaps = self.verify_patient_identity(all_patient_info)
+            if score < 85: # Threshold increased to 85% for high safety
+                return {
+                    "answer": f"""
+                        ### ⚠️ Patient Identity Mismatch Detected
+                        **Action Blocked for Safety**
 
+                        My system has detected that the uploaded reports belong to different individuals:
+                        - **Identified Gaps:** {', '.join(gaps)}
+                        - **Confidence Score:** {score}%
 
+                        **Why am I seeing this?**
+                        Comparing medical data (like Hemoglobin or Glucose) across different patients can lead to dangerous clinical conclusions. For your safety, I cannot generate a combined timeline or trend analysis for unrelated individuals.
+
+                        **How to fix:**
+                        Please select a specific report from the dropdown or ensure all uploaded files belong to the same patient.
+                        """, 
+                    "sources": "Safety Guardrail Engine",
+                    "identity_score": score
+                }
+        # -------------------------------------
+        # 2. CONTEXT BUILDING (If it passes the gate)
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+        all_contexts = []
+
+        if report_id and report_id != "":
+            paths_to_search = [os.path.join(user_folder, f"report_{report_id}")]
+        else:
+            if not os.path.exists(user_folder):
+                 return {"answer": "No records found.", "sources": ""}
+            paths_to_search = [os.path.join(user_folder, d) for d in os.listdir(user_folder) if d.startswith("report_")]
+
+        for path in paths_to_search:
+            if os.path.exists(path):
+                db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+                docs = db.similarity_search(question, k=3)
+                report_label = path.split("report_")[-1][:8]
+                all_contexts.append(f"\n[STRICT SOURCE: Report_{report_label}]\n" + "\n".join([d.page_content for d in docs]))
+
+        context = "\n".join(all_contexts)
+
+        # 3. ANTI-HALLUCINATION PROMPT (Refined for Reference Ranges)
         prompt = ChatPromptTemplate.from_template("""
-        You are a Senior Medical AI Consultant. You are analyzing a patient's medical history.
-
+        You are a Clinical Data Integrity Agent. 
+        
         CONTEXT:
         {context}
         
-        QUESTION:
+        USER QUESTION:
         {question}
 
-        STRICT CLINICAL RULES:
-        1. Only answer based on ACTUAL results. Ignore reference examples.
-        2. If a report is labeled as a "Sample" or has a mismatching ID, flag it as a 🚨 **Conflict**.
-        3. Use simple Hinglish/English.
+        STRICT CLINICAL PROTOCOL:
+        1. DATA EXTRACTION: Only use values listed under "Result" or "Value". 
+        2. **STRICTLY IGNORE** reference ranges, normal intervals (e.g., 11.0-16.0), or bio-ref intervals as patient results. 
+        3. DATA MISMATCH: If the context contains multiple sources but the results are for different names, DO NOT summarize them into one timeline.
+        4. ACCURACY: If a number is followed by a range (e.g., '12 [11-16]'), the result is 12. Do not use 11 or 16.
 
-        --- 
-        PROFESSIONAL FORMATTING RULES (MANDATORY):
-        1. Use **Markdown Headers (##)** for major sections.
-        2. Use **Bold text** for medical markers (e.g., **Glucose**, **HbA1c**).
-        3. Use a **Markdown Table** to compare lab values if they appear in multiple reports.
-        4. Use 🩺 for 'Executive Summary' and 🚨 for 'High-Priority Warnings'.
-        5. Use a clear **Longitudinal Health Timeline** at the end.
-        ---
-
-        Answer:
+        Answer in a professional, structured Markdown format:
         """)
+
+       
 
         chain = prompt | self.llm
         response = chain.invoke({
-            "context": formatted_context, 
-            "question": question
+            "context": context, 
+            "question": question, 
         })
         
         return {
             "answer": response.content, 
-            "sources": "Master Knowledge Base" if not report_id else "Specific Report"
+            "sources": f"Analyzed {len(paths_to_search)} reports"
         }
     
+
     def extract_patient_metadata(self, text: str):
         """Uses Llama 3.1 to extract structured patient details from raw text."""
         prompt = ChatPromptTemplate.from_template("""
