@@ -53,6 +53,12 @@ async def upload_report(
         # 3. AI Pipeline (OCR -> NLP -> RAG)
         raw_text = ocr_service.extract_text(file_path)
         extracted_values = ocr_service.extract_medical_values(raw_text)
+
+        print("\n🧪 DEBUG: Extracted Values from OCR:")
+        for k, v in extracted_values.items():
+            print(f"   {k} -> {v}")
+        print("-" * 30)
+
         medical_entities = nlp_service.extract_entities(raw_text)
 
         # 2. METADATA & INTERPRETATION (The Smart Logic)
@@ -73,7 +79,7 @@ async def upload_report(
             report_type = "Complete Blood Count (CBC)"
         
 
-        if "glucose" in extracted_values:
+        if "glucose" in extracted_values and report_type == "Diabetes Profile":
             print(f"🔍 DEBUG: Glucose found ({extracted_values['glucose']}). Starting prediction...")
             try:
                 # IMPORTANT: 'diabetes_service' (Small 'd') use karna hai, jo instance hai
@@ -96,7 +102,7 @@ async def upload_report(
                 print(f"❌ DEBUG: Prediction Failed! Error: {str(e)}")
                 # final_risk_score = None
 
-        elif "cholesterol" in extracted_values: 
+        elif "cholesterol" in extracted_values and report_type == "Lipid Profile":
             report_type = "Lipid Profile (Cardiac)"           
             try:
                 # We fill missing values with averages for the Cleveland model

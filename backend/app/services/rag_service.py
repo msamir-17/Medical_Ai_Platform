@@ -117,42 +117,31 @@ class RAGService:
         # 🟢 MODE 1: DETERMINISTIC OVERVIEW (No FAISS, Only Database)
         # Isse "Ghost Reports" ki problem solve ho jayegi
         if mode == "overview":
-            # Database se aya hua structured data use karein
-            registry_inventory = []
+            inventory = []
             for r in all_report_data:
-                # Sirf trusted metadata uthao
-                info = r.get('patient_info', {})
-                entry = {
-                    "report_type": r.get('report_type'),
-                    "patient_name": info.get('name', 'N/A'),
-                    "doctor": info.get('doctor_name', 'N/A'),
-                    "hospital": info.get('hospital_name', 'N/A'),
-                    "gender": info.get('gender', 'N/A'),
-                    "status": "Verified & Parsed"
-                }
-                registry_inventory.append(entry)
+                p = r.get('patient_info', {})
+                inventory.append({
+                    "id": r.get('id')[:8],
+                    "patient": p.get('name', 'N/A'),
+                    "id_number": p.get('patient_id', 'N/A'),
+                    "type": r.get('report_type'), # This will be a list now
+                    "doctor": p.get('doctor_name', 'N/A'),
+                    "facility": p.get('hospital_name', 'N/A')
+                })
 
-            # AI ko sirf ek Registrar ki tarah behave karne ko bolo
             prompt = ChatPromptTemplate.from_template("""
-            You are a Medical Records Registrar. 
-            Your ONLY task is to list the available reports in the user's vault.
-
-            AVAILABLE DOCUMENTS:
-            {inventory}
-
-            STRICT INSTRUCTIONS:
-            1. List each document with its metadata (Patient Name, Type, Doctor, Facility).
-            2. DO NOT compare values between reports.
-            3. DO NOT generate health trends or timelines.
-            4. DO NOT provide medical advice.
-            5. If multiple distinct patient names exist, add a footer: "⚠️ MULTIPLE IDENTITIES DETECTED. Cross-report comparison is restricted for safety."
+            You are a Medical Records Registrar. Summarize the inventory.
             
-            Use a clean bulleted list format.
+            INVENTORY: {inventory}
+            
+            STRICT RULES:
+            1. List each report as a separate entry with its Patient Name, ID, and Type.
+            2. If names differ, add a footer warning: "⚠️ MULTIPLE IDENTITIES DETECTED."
+            3. DO NOT analyze lab values or provide clinical advice.
             """)
-
             chain = prompt | self.llm
-            response = chain.invoke({"inventory": json.dumps(registry_inventory, indent=2)})
-            return {"answer": response.content, "sources": "Structured Clinical Registry"}
+            response = chain.invoke({"inventory": json.dumps(inventory)})
+            return {"answer": response.content, "sources": "Database Registry"}
         # 🟡 MODE 2 & 3: COMPARE / SINGLE (FAISS Context Retrieval)
         all_contexts = []
         

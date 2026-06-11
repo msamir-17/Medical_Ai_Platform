@@ -13,11 +13,45 @@ class OCRService:
         self.reader = easyocr.Reader(['en'])
 
     def extract_text(self, file_path: str):
-
+        """
+        THE MASTER ENTRY POINT: 
+        Coordinates the 7-Layer logic for both PDFs and Images.
+        """
+        full_structured_text = ""
+        
+        # --- PATH A: Handling PDF Files ---
         if file_path.lower().endswith('.pdf'):
-            return self._extract_from_pdf_visually(file_path)
+            doc = fitz.open(file_path)
+            for page in doc:
+                # Page ko image mein badlo
+                pix = page.get_pixmap(dpi=150)
+                # Process the page using the 7-layer pipeline
+                page_text = self._process_visual_layer(pix.tobytes("png"))
+                full_structured_text += page_text + "\n--- Page Break ---\n"
+            doc.close()
+            
+        # --- PATH B: Handling Image Files (PNG, JPG) ---
+        else:
+            with open(file_path, "rb") as f:
+                img_bytes = f.read()
+            # Process the single image using the same 7-layer pipeline
+            full_structured_text = self._process_visual_layer(img_bytes)
 
-        return self._extract_from_image(file_path)
+        return full_structured_text
+
+    def _process_visual_layer(self, img_bytes):
+        """
+        REUSABLE COMPONENT: Runs Enhancement -> Raw OCR -> Layout Reconstruction
+        This ensures both Images and PDFs get the same HIGH accuracy.
+        """
+        # 1. Layer 1: Image Enhancement (Contrast/Sharpness)
+        enhanced_img = self._enhance_image(img_bytes)
+        
+        # 2. Layer 2: Raw Coordinate Extraction
+        raw_results = self.reader.readtext(enhanced_img, detail=1)
+        
+        # 3. Layer 3 & 4: Structural Reconstruction
+        return self._reconstruct_layout(raw_results)
 
     # -----------------------------------------
     # PDF OCR
@@ -112,31 +146,42 @@ class OCRService:
 
 
         patterns = {
+            
+            # Standard
             "glucose": r"glucose[^0-9]+(\d+\.?\d*)",
 
-            "hb": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
-
+            "hba1c": r"hb\s?a1c[^0-9]+(\d+\.?\d*)",
+            
             "cholesterol": r"cholesterol[^0-9]+(\d+\.?\d*)",
+            
+            "triglycerides": r"triglycerides[^0-9]+(\d+\.?\d*)",
+            
+            # CBC
+            "haemoglobin": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
 
+            "wbc": r"w\.?b\.?c[^0-9]+(\d+)",
+            
+            "platelets": r"platelet[^0-9]+(\d+)",
+            
+            # KFT
             "creatinine": r"creatinine[^0-9]+(\d+\.?\d*)",
 
+            "uric acid": r"uric\s?acid[^0-9]+(\d+\.?\d*)",
             
-
-            "ph": r"ph[^0-9]+(\d+\.?\d*)",
+            # ABG
+            "ph": r"p[Hh][:\s]+([0-9]\.\d+)", 
 
             "pco2": r"pco2[^0-9]+(\d+\.?\d*)",
-
+            
             "po2": r"po2[^0-9]+(\d+\.?\d*)",
 
-            "bmi": r"bmi[^0-9]+(\d+\.?\d*)",
+            # NEW: Inflammatory/Fever
+            "crp": r"c-reactive\s?protein[^0-9]+(\d+\.?\d*)",
 
-            "haemoglobin": r"[Hh]aemoglobin[:\s]+(\d+\.?\d*)",
-
-            "wbc": r"Total\s?[Ww]\.?[Bb]\.?[Cc]\.?\s?Count[:\s]+(\d+)",
-
-            "platelets": r"Platelet\s?Count[:\s]+(\d+)",
+            "esr": r"esr[^0-9]+(\d+)",
             
-            "creatinine": r"Serum\s?Creatinine[:\s]+(\d+\.?\d*)"
+            # NEW: Thyroid
+            "tsh": r"tsh[^0-9]+(\d+\.?\d*)"
         }
 
         extracted = {}
@@ -235,25 +280,7 @@ class OCRService:
         
         return structured_text
 
-    def extract_text(self, file_path: str):
-        """The Main Entry Point: Coordinates the 7-Layer logic."""
-        doc = fitz.open(file_path)
-        full_structured_text = ""
 
-        for page in doc:
-            pix = page.get_pixmap(dpi=150)
-            # Layer 1: Enhancement
-            enhanced_img = self._enhance_image(pix.tobytes("png"))
-            
-            # Layer 2: Raw Extraction
-            raw_results = self.reader.readtext(enhanced_img, detail=1)
-            
-            # Layer 3 & 4: Structural Reconstruction
-            page_text = self._reconstruct_layout(raw_results)
-            full_structured_text += page_text + "\n--- Page Break ---\n"
-
-        doc.close()
-        return full_structured_text
 
 # Singleton Instance
 ocr_service = OCRService()

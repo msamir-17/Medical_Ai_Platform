@@ -5,6 +5,7 @@ from app.database import get_db # 2. ADD THIS
 from app.models.report import Report # 3. ADD THIS
 from typing import Optional ,List
 from sqlalchemy.orm import Session
+from app.services.classifier_service import classifier
 
 from app.routers.auth_routes import get_current_user
 router = APIRouter()
