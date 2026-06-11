@@ -81,67 +81,59 @@ class RAGService:
     
     
     def verify_patient_identity(self, all_metadata: list):
-        """Calculates if all reports belong to the same person."""
+        """Strictly detects if multiple unique names exist."""
         if not all_metadata or len(all_metadata) <= 1:
-            return 100, ""
+            return 100, []
 
-        score = 0
-        base = all_metadata[0]
-        reasons = []
-
-        for other in all_metadata[1:]:
-            # 1. Patient ID Check
-            if base.get("patient_id") == other.get("patient_id") and base.get("patient_id") != "N/A":
-                score += 60
-            
-            # 2. Name Similarity (Using rapidfuzz)
-            name_match = process.extractOne(base.get("name", ""), [other.get("name", "")])
-            if name_match and name_match[1] > 85:
-                score += 25
-            else:
-                reasons.append(f"Names differ: {base.get('name')} vs {other.get('name')}")
-
-            # 3. Gender Check
-            if base.get("gender") == other.get("gender"):
-                score += 15
-            else:
-                reasons.append("Gender mismatch detected")
-
-        avg_score = score / (len(all_metadata) - 1)
-        return avg_score, reasons
-
+        # Get unique names, ignoring N/A
+        unique_names = set()
+        for p in all_metadata:
+            name = p.get("name", "").strip().upper()
+            if name and name != "N/A" and "SAMPLE" not in name:
+                unique_names.add(name)
+        
+        reasons = [f"Found {len(unique_names)} different patient names: {', '.join(unique_names)}"]
+        # If more than 1 real name exists, score is 0 (Absolute Mismatch)
+        score = 0 if len(unique_names) > 1 else 100
+        return score, reasons
     
     def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
+
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
-        # 🟢 MODE 1: DETERMINISTIC OVERVIEW (No FAISS, Only Database)
-        # Isse "Ghost Reports" ki problem solve ho jayegi
         if mode == "overview":
             inventory = []
             for r in all_report_data:
                 p = r.get('patient_info', {})
+                # Ensure ALL report types are joined into one string
+                r_types = r.get('report_type', [])
+                type_str = ", ".join(r_types) if isinstance(r_types, list) else str(r_types)
+                
                 inventory.append({
-                    "id": r.get('id')[:8],
                     "patient": p.get('name', 'N/A'),
-                    "id_number": p.get('patient_id', 'N/A'),
-                    "type": r.get('report_type'), # This will be a list now
-                    "doctor": p.get('doctor_name', 'N/A'),
-                    "facility": p.get('hospital_name', 'N/A')
+                    "id": p.get('patient_id', 'N/A'),
+                    "contains": type_str,
+                    "doctor": p.get('doctor_name', 'N/A')
                 })
 
             prompt = ChatPromptTemplate.from_template("""
-            You are a Medical Records Registrar. Summarize the inventory.
-            
-            INVENTORY: {inventory}
-            
-            STRICT RULES:
-            1. List each report as a separate entry with its Patient Name, ID, and Type.
-            2. If names differ, add a footer warning: "⚠️ MULTIPLE IDENTITIES DETECTED."
-            3. DO NOT analyze lab values or provide clinical advice.
+            You are a Clinical Data Auditor. List the vault inventory.
+
+            INVENTORY DATA:
+            {inventory}
+
+            STRICT INSTRUCTIONS:
+            1. For each entry, list the Patient Name, ID, and EVERYTHING in the 'contains' field.
+            2. IDENTITY CHECK: Compare the 'patient' names across all entries. 
+            3. If names like 'BASHIR SHAIKH', 'KANTA YADAV', and 'SHAFIQ QURESHI' are all present, you MUST start your response with: 
+               "🚨 **CRITICAL WARNING: MULTIPLE PATIENT IDENTITIES DETECTED**."
+            4. Explain that cross-report analysis is disabled for safety.
+            5. List the reports as an inventory only.
             """)
+            
             chain = prompt | self.llm
             response = chain.invoke({"inventory": json.dumps(inventory)})
-            return {"answer": response.content, "sources": "Database Registry"}
+            return {"answer": response.content, "sources": "Clinical Registry"}
         # 🟡 MODE 2 & 3: COMPARE / SINGLE (FAISS Context Retrieval)
         all_contexts = []
         
