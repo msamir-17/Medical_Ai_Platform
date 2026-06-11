@@ -16,23 +16,37 @@ class ChatRequest(BaseModel):
     report_ids: Optional[List[str]] = [] # Ab hum list bhejenge
 
 
-
 @router.post("/query")
-async def ask_question(request: ChatRequest, db: Session = Depends(get_db), current_user_id: str = Depends(get_current_user)):
-    
-# 1. Decide which reports to fetch metadata for
-    target_ids = request.report_ids if request.report_ids else [request.report_id]
-    
-    # 2. Supabase se un reports ki info nikalo
-    reports = db.query(Report).filter(Report.id.in_(target_ids), Report.user_id == current_user_id).all()
-    all_info = [r.patient_info for r in reports if r.patient_info]
+async def ask_question(
+    request: ChatRequest, 
+    db: Session = Depends(get_db), 
+    current_user_id: str = Depends(get_current_user)
+):
+    # 1. DATABASE IS THE SOURCE OF TRUTH
+    # Agar user ne 'All Reports' (overview/compare) चुना है, तो DB से सारी active IDs निकालो
+    if request.mode in ["overview", "compare"] and (not request.report_ids):
+        active_reports = db.query(Report).filter(Report.user_id == current_user_id).all()
+        target_ids = [r.id for r in active_reports]
+    else:
+        # Single report ya specific selected reports
+        target_ids = request.report_ids if request.report_ids else [request.report_id]
+        active_reports = db.query(Report).filter(Report.id.in_(target_ids), Report.user_id == current_user_id).all()
 
-    # 3. Call the service with the new parameters
+    # 2. Pack data for the service (No more guessing)
+    all_report_data = [{
+        "id": r.id,
+        "patient_info": r.patient_info,
+        "extracted_values": r.extracted_values,
+        "report_type": r.report_type,
+        "date": r.created_at
+    } for r in active_reports]
+
+    # 3. Call Service
     result = rag_service.query_report(
         question=request.question,
         user_id=current_user_id,
-        mode=request.mode, # <--- Passing the mode!
-        report_ids=target_ids,
-        all_patient_info=all_info
+        mode=request.mode,
+        report_ids=target_ids, # Sirf wahi IDs jo DB mein hain
+        all_report_data=all_report_data
     )
     return result

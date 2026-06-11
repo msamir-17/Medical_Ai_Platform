@@ -4,6 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import os
+import json
 from langchain_core.output_parsers import JsonOutputParser
 from rapidfuzz import process
 
@@ -54,6 +55,7 @@ class RAGService:
             db.save_local(master_path)            
         return len(chunks)
 
+    
     def classify_query(self, question: str):
         """
         Senior Logic: Decisions whether to use Structured Data (SQL) or Unstructured (RAG).
@@ -76,6 +78,7 @@ class RAGService:
         except:
             # FIX: Use empty string instead of None
             return {"category": "GENERAL", "target_marker": ""}
+    
     
     def verify_patient_identity(self, all_metadata: list):
         """Calculates if all reports belong to the same person."""
@@ -107,61 +110,85 @@ class RAGService:
         avg_score = score / (len(all_metadata) - 1)
         return avg_score, reasons
 
-    def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_patient_info: list = None):
+    
+    def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+        
+        # 🟢 MODE 1: DETERMINISTIC OVERVIEW (No FAISS, Only Database)
+        # Isse "Ghost Reports" ki problem solve ho jayegi
+        if mode == "overview":
+            # Database se aya hua structured data use karein
+            registry_inventory = []
+            for r in all_report_data:
+                # Sirf trusted metadata uthao
+                info = r.get('patient_info', {})
+                entry = {
+                    "report_type": r.get('report_type'),
+                    "patient_name": info.get('name', 'N/A'),
+                    "doctor": info.get('doctor_name', 'N/A'),
+                    "hospital": info.get('hospital_name', 'N/A'),
+                    "gender": info.get('gender', 'N/A'),
+                    "status": "Verified & Parsed"
+                }
+                registry_inventory.append(entry)
+
+            # AI ko sirf ek Registrar ki tarah behave karne ko bolo
+            prompt = ChatPromptTemplate.from_template("""
+            You are a Medical Records Registrar. 
+            Your ONLY task is to list the available reports in the user's vault.
+
+            AVAILABLE DOCUMENTS:
+            {inventory}
+
+            STRICT INSTRUCTIONS:
+            1. List each document with its metadata (Patient Name, Type, Doctor, Facility).
+            2. DO NOT compare values between reports.
+            3. DO NOT generate health trends or timelines.
+            4. DO NOT provide medical advice.
+            5. If multiple distinct patient names exist, add a footer: "⚠️ MULTIPLE IDENTITIES DETECTED. Cross-report comparison is restricted for safety."
+            
+            Use a clean bulleted list format.
+            """)
+
+            chain = prompt | self.llm
+            response = chain.invoke({"inventory": json.dumps(registry_inventory, indent=2)})
+            return {"answer": response.content, "sources": "Structured Clinical Registry"}
+        # 🟡 MODE 2 & 3: COMPARE / SINGLE (FAISS Context Retrieval)
         all_contexts = []
         
-        # --- 1. IDENTITY & SAFETY GATE (Trigger for Multi-report modes) ---
-        identity_warning = ""
-        if mode in ["compare", "overview"] and all_patient_info and len(all_patient_info) > 1:
-            score, gaps = self.verify_patient_identity(all_patient_info)
+        # Identity Safety Gate for Comparison
+        if mode == "compare" and all_report_data:
+            score, gaps = self.verify_patient_identity([r['patient_info'] for r in all_report_data])
             if score < 85:
                 return {
-                    "answer": f"### ⚠️ Clinical Safety Block\nIdentity mismatch detected (Score: {score}%).\n**Gaps:** {', '.join(gaps)}\n\nPlease select reports belonging to the same person.",
+                    "answer": f"### 🚨 Safety Block\nIdentity Mismatch detected ({score}% confidence). Gaps: {', '.join(gaps)}. Cross-report analysis is disabled for safety.",
                     "sources": "Safety Engine"
                 }
 
-        # --- 2. DYNAMIC PATH IDENTIFICATION (The "List-to-String" Fix) ---
-        if mode == "overview":
-            # Sabhi available report folders dhundo
-            if not os.path.exists(user_folder):
-                 return {"answer": "No records found.", "sources": ""}
-            paths_to_search = [os.path.join(user_folder, d) for d in os.listdir(user_folder) if d.startswith("report_")]
-        else:
-            # Single ya Compare mode: Use the IDs provided
-            # FIX: Iterate through list instead of putting list in a string
-            paths_to_search = [os.path.join(user_folder, f"report_{rid}") for rid in report_ids if rid]
-
-        # --- 3. CONTEXT RETRIEVAL (Fetching real text from FAISS) ---
-        for path in paths_to_search:
+        # Context build karein sirf Database ki active IDs ke liye
+        for rid in report_ids:
+            path = os.path.join(user_folder, f"report_{rid}")
             if os.path.exists(path):
                 db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-                # Har report se top 3 relevant chunks lo
                 docs = db.similarity_search(question, k=3)
-                report_label = path.split("report_")[-1][:8]
-                all_contexts.append(f"\n[DATA FROM REPORT ID: {report_label}]\n" + "\n".join([d.page_content for d in docs]))
+                all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n" + "\n".join([d.page_content for d in docs]))
 
         context = "\n".join(all_contexts)
-        if not context.strip():
-            return {"answer": "I found the files, but they contain no readable text. Please re-upload.", "sources": "OCR Check"}
-
-        # --- 4. THE MASTER PROMPT ---
+        
+        # Final AI reasoning prompt
         prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Integrity Agent. 
+        You are a Clinical Data Specialist. Answer based ONLY on the context below.
         
         CONTEXT:
         {context}
         
-        USER QUESTION:
+        QUESTION:
         {question}
 
         STRICT CLINICAL PROTOCOL:
-        1. Only use values listed under "Result" or "Value". 
-        2. STRICTLY IGNORE reference ranges (e.g., 11.0-16.0) as patient results.
-        3. If multiple reports are present, summarize them report-by-report.
-        4. Use Markdown for structured output (headers, bold, tables).
-
-        Answer:
+        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
+        2. Strictly ignore reference ranges as results.
+        3. Answer in professional Hinglish/English.
         """)
 
         chain = prompt | self.llm
@@ -169,9 +196,10 @@ class RAGService:
         
         return {
             "answer": response.content, 
-            "sources": f"Analyzed {len(paths_to_search)} clinical records"
+            "sources": f"Analyzed {len(report_ids)} active documents"
         }
-
+    
+   
     def extract_patient_metadata(self, text: str):
         """Uses Llama 3.1 to extract structured patient details from raw text."""
         prompt = ChatPromptTemplate.from_template("""
