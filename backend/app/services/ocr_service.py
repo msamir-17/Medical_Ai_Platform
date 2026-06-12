@@ -24,7 +24,7 @@ class OCRService:
             doc = fitz.open(file_path)
             for page in doc:
                 # Page ko image mein badlo
-                pix = page.get_pixmap(dpi=150)
+                pix = page.get_pixmap(dpi=300)
                 # Process the page using the 7-layer pipeline
                 page_text = self._process_visual_layer(pix.tobytes("png"))
                 full_structured_text += page_text + "\n--- Page Break ---\n"

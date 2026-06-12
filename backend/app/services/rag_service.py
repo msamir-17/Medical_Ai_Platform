@@ -7,6 +7,8 @@ import os
 import json
 from langchain_core.output_parsers import JsonOutputParser
 from rapidfuzz import process
+import json
+from langchain_core.prompts import ChatPromptTemplate
 
 from dotenv import load_dotenv
 
@@ -98,7 +100,8 @@ class RAGService:
         return score, reasons
     
     def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
-
+        print("DEBUG report_ids:", report_ids)
+        print("DEBUG type:", type(report_ids))
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
         if mode == "overview":
@@ -149,7 +152,7 @@ class RAGService:
         # Context build karein sirf Database ki active IDs ke liye
         for rid in report_ids:
             path = os.path.join(user_folder, f"report_{rid}")
-
+            print("RID:", rid)
             print(f"📂 CLOUD DEBUG: Checking path: {path}")
             print(f"❓ Path Exists?: {os.path.exists(path)}")
 
@@ -189,29 +192,141 @@ class RAGService:
             "sources": f"Analyzed {len(report_ids)} active documents"
         }
     
-   
     def extract_patient_metadata(self, text: str):
-        """Uses Llama 3.1 to extract structured patient details from raw text."""
-        prompt = ChatPromptTemplate.from_template("""
-        Extract patient details from this medical text in JSON format. 
-        Fields: name, age, gender, patient_id, doctor_name, hospital_name, sample_type.
-        If a field is missing, use "N/A". Return ONLY the raw JSON.
+        """
+        Uses Llama 3.1 to extract structured patient metadata.
+        Keeps the same output schema while reducing Doctor/Hospital confusion.
+        """
 
-        Text: {text}
+        prompt = ChatPromptTemplate.from_template("""
+        You are a Clinical Data Integrity Expert.
+
+        Extract the following fields and return ONLY valid JSON.
+
+        REQUIRED JSON:
+        {{
+            "name": "",
+            "age": "",
+            "gender": "",
+            "date_of_birth": "",
+            "patient_id": "",
+            "doctor_name": "",
+            "hospital_name": "",
+            "sample_type": ""
+        }}
+
+        STRICT RULES:
+
+        1. PATIENT NAME:
+        - Extract ONLY the patient's name.
+        - Never use doctor names or hospital names.
+
+        2. DOCTOR NAME:
+        - Must be an actual person's name.
+        - Look for labels like:
+            - Ref Dr
+            - Referred By
+            - Consultant
+            - Physician
+            - Pathologist
+        - NEVER return hospital/lab names.
+        - Examples:
+            ✓ "Dr Satyey G Tayade"
+            ✓ "Dr M S Kanojiya"
+            ✓ "Dr Jeeshan Shaikh"
+            ✗ "Millat Hospital"
+            ✗ "Anum Diagnostic"
+            ✗ "Main Lab"
+
+        3. HOSPITAL NAME:
+        - Extract facility/lab/hospital name.
+        - Examples:
+            ✓ Millat Hospital
+            ✓ Anum Diagnostic
+            ✓ SRL Diagnostics
+
+        4. SAMPLE TYPE:
+        - Prefer biological sample names:
+            Blood, Serum, Plasma, Urine, Biopsy.
+        - Ignore tube labels like EDTA, Heparin, Fluoride.
+
+        5. IGNORE:
+        - Addresses
+        - Phone numbers
+        - Footer text
+        - ISO/NABL details
+        - Registration numbers
+
+        6. If any value cannot be determined, return "N/A".
+
+        Return ONLY raw JSON.
+
+        MEDICAL TEXT:
+        {text}
         """)
-        
+
         chain = prompt | self.llm
-        response = chain.invoke({"text": text[:2000]}) # Sending only first 2k chars for speed
-        
-        # Simple cleanup to ensure valid JSON
+
+        # Use full text (or truncate only if extremely large)
+        response = chain.invoke({
+            "text": text
+        })
+
+        print("\n" + "=" * 60)
+        print("🔍 RAW LLM METADATA RESPONSE")
+        print(response.content)
+        print("=" * 60 + "\n")
+
         try:
-            import json
-            # Finding the JSON block in case LLM adds extra text
-            start = response.content.find('{')
-            end = response.content.rfind('}') + 1
-            return json.loads(response.content[start:end])
-        except:
-            return {"name": "Unknown", "age": "N/A"}
+            content = response.content
+            start = content.find("{")
+            end = content.rfind("}") + 1
+
+            metadata = json.loads(content[start:end])
+
+            # ----------------------------
+            # Safety cleanup in Python
+            # ----------------------------
+            doctor = str(metadata.get("doctor_name", "")).strip()
+
+            blocked_words = [
+                "hospital",
+                "diagnostic",
+                "laboratory",
+                "lab",
+                "centre",
+                "center",
+                "clinic",
+            ]
+
+            doctor = str(metadata.get("doctor_name", "")).strip()
+
+            if any(word in doctor.lower() for word in blocked_words):
+                metadata["doctor_name"] = "N/A"
+
+            sample = str(metadata.get("sample_type", "")).strip().lower()
+
+            if sample in ["edta", "heparin", "fluoride"]:
+                metadata["sample_type"] = "N/A"
+            
+            print("✅ Parsed metadata:", metadata)
+            print("👨‍⚕️ Doctor extracted:", metadata.get("doctor_name"))
+
+            return metadata
+
+        except Exception as e:
+            print(f"❌ Metadata Extraction Error: {e}")
+
+            return {
+                "name": "N/A",
+                "age": "N/A",
+                "gender": "N/A",
+                "date_of_birth": "N/A",
+                "patient_id": "N/A",
+                "doctor_name": "N/A",
+                "hospital_name": "N/A",
+                "sample_type": "N/A",
+            }
 
 
 # Singleton instance
