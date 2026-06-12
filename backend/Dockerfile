@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 # Create a non-root user for security
 RUN useradd -m -u 1000 user
+USER root
+RUN mkdir -p /app/vector_stores /app/uploads && chmod -R 777 /app/vector_stores /app/uploads
 USER user
 ENV PATH="/home/user/.local/bin:$PATH"
 

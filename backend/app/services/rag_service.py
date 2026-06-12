@@ -149,13 +149,22 @@ class RAGService:
         # Context build karein sirf Database ki active IDs ke liye
         for rid in report_ids:
             path = os.path.join(user_folder, f"report_{rid}")
+
+            print(f"📂 CLOUD DEBUG: Checking path: {path}")
+            print(f"❓ Path Exists?: {os.path.exists(path)}")
+
             if os.path.exists(path):
                 db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
                 docs = db.similarity_search(question, k=3)
+
+                print(f"📄 Retrieved Docs from {rid[:5]}: {len(docs)}")
+
                 all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n" + "\n".join([d.page_content for d in docs]))
 
         context = "\n".join(all_contexts)
-        
+        print(f"📏 Final Context Length: {len(context)}")
+        if len(context) > 0:
+             print(f"🔎 Context Preview: {context[:200]}...")
         # Final AI reasoning prompt
         prompt = ChatPromptTemplate.from_template("""
         You are a Clinical Data Specialist. Answer based ONLY on the context below.
