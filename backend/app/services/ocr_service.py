@@ -24,8 +24,10 @@ class OCRService:
             words = page.get_text("words") # (x0, y0, x1, y1, word, block_no, line_no, word_no)
             
             # Agar meaningful text hai (>200 chars)
-            if len(words) > 50:
+            if len(words) > 30:
                 print(f"⚡ Page {page_num+1}: Using Structural Digital Extraction")
+                # Remove empty OCR tokens
+                words = [w for w in words if str(w[4]).strip()]
                 # Sort by Block No, then Line No, then X-coordinate
                 words.sort(key=lambda w: (w[5], w[6], w[0]))
                 
@@ -62,7 +64,7 @@ class OCRService:
         enhanced_img = self._enhance_image(img_bytes)
         
         # 2. Layer 2: Raw Coordinate Extraction
-        raw_results = self.reader.readtext(enhanced_img, detail=1, batch_size=4)
+        raw_results = self.reader.readtext(enhanced_img, detail=1, batch_size=8)
         
         # 3. Layer 3 & 4: Structural Reconstruction
         return self._reconstruct_layout(raw_results)
@@ -132,10 +134,11 @@ class OCRService:
     def _normalize_text(self, text):
 
         # Remove extra spaces
-        text = re.sub(r"\s+", " ", text)
+        # collapse multiple blank lines
+        text = re.sub(r"\n{2,}", "\n", text)
 
-        # Fix hyphen spacing
-        text = re.sub(r"\s*-\s*", "-", text)
+        # remove repeated spaces
+        text = re.sub(r"[ \t]+", " ", text)
 
         # OCR repair dictionary
         repairs = {
@@ -154,62 +157,31 @@ class OCRService:
     # MEDICAL VALUE EXTRACTION
     # -----------------------------------------
     def extract_medical_values(self, text: str):
-        """
-        Extract medical values line-by-line instead of searching
-        the entire document. This greatly reduces wrong matches.
-        """
+
+        patterns = {
+            "glucose": r"glucose[^0-9]+(\d+\.?\d*)",
+            "hba1c": r"hb\s?a1c[^0-9]+(\d+\.?\d*)",
+            "cholesterol": r"cholesterol[^0-9]+(\d+\.?\d*)",
+            "triglycerides": r"triglycerides[^0-9]+(\d+\.?\d*)",
+            "haemoglobin": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
+            "wbc": r"w\.?b\.?c[^0-9]+(\d+)",
+            "platelets": r"platelet[^0-9]+(\d+)",
+            "creatinine": r"creatinine[^0-9]+(\d+\.?\d*)",
+            "uric acid": r"uric\s?acid[^0-9]+(\d+\.?\d*)",
+            "ph": r"p[Hh][:\s]+([0-9]\.\d+)",
+            "pco2": r"pco2[^0-9]+(\d+\.?\d*)",
+            "po2": r"po2[^0-9]+(\d+\.?\d*)",
+            "crp": r"c-reactive\s?protein[^0-9]+(\d+\.?\d*)",
+            "esr": r"esr[^0-9]+(\d+)",
+            "tsh": r"tsh[^0-9]+(\d+\.?\d*)",
+        }
 
         extracted = {}
 
-        # Normalize lines
-        lines = [
-            re.sub(r"\s+", " ", line).strip()
-            for line in text.splitlines()
-            if line.strip()
-        ]
-
-        field_patterns = {
-            "glucose": r"\bglucose\b",
-            "hba1c": r"\bhb\s*a1c\b",
-            "cholesterol": r"\bcholesterol\b",
-            "triglycerides": r"\btriglycerides\b",
-            "haemoglobin": r"\bha?emoglobin\b",
-            "wbc": r"\bw\.?b\.?c\b|\btotal white\b",
-            "platelets": r"\bplatelet",
-            "creatinine": r"\bcreatinine\b",
-            "uric acid": r"\buric\s+acid\b",
-            "ph": r"\bph\b",
-            "pco2": r"\bpco2\b",
-            "po2": r"\bpo2\b",
-            "crp": r"\bc-?reactive protein\b|\bcrp\b",
-            "esr": r"\besr\b",
-            "tsh": r"\btsh\b",
-        }
-
-        for line in lines:
-            lower_line = line.lower()
-
-            for key, pattern in field_patterns.items():
-
-                if key in extracted:
-                    continue
-
-                if re.search(pattern, lower_line, re.IGNORECASE):
-
-                    numbers = re.findall(r"\d+(?:\.\d+)?", line)
-
-                    if not numbers:
-                        continue
-
-                    # pH should prefer decimal values like 7.279
-                    if key == "ph":
-                        decimal_values = [n for n in numbers if "." in n]
-                        if decimal_values:
-                            extracted[key] = decimal_values[0]
-                        continue
-
-                    # For all other tests, use the first number on the same line
-                    extracted[key] = numbers[0]
+        for key, pattern in patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                extracted[key] = match.group(1)
 
         return extracted
     def interpret_markers(self, values: dict):
@@ -261,43 +233,53 @@ class OCRService:
         return buf.getvalue()
 
     def _reconstruct_layout(self, ocr_results):
-        """LAYER 2 & 3: Clusters words into logical lines using Y-coordinate proximity."""
-        # results format: [([box], text, confidence), ...]
-        if not ocr_results: return ""
+        """
+        Reconstruct text while preserving rows and approximate columns.
+        """
+        if not ocr_results:
+            return ""
 
-        # 1. Sort by Y-coordinate (Top to Bottom)
+        # Sort top -> bottom
         ocr_results.sort(key=lambda x: x[0][0][1])
 
         lines = []
-        if ocr_results:
-            current_line = [ocr_results[0]]
-            
-            for i in range(1, len(ocr_results)):
-                prev_y = current_line[-1][0][0][1]
-                curr_y = ocr_results[i][0][0][1]
-                
-                # If vertical distance < 10 pixels, they are on the same line
-                if abs(curr_y - prev_y) < 10:
-                    current_line.append(ocr_results[i])
-                else:
-                    # Sort the finished line by X-coordinate (Left to Right)
-                    current_line.sort(key=lambda x: x[0][0][0])
-                    lines.append(current_line)
-                    current_line = [ocr_results[i]]
-            
-            # Add the last line
-            current_line.sort(key=lambda x: x[0][0][0])
-            lines.append(current_line)
+        current_line = [ocr_results[0]]
 
-        # Convert to structured text representation
-        structured_text = ""
+        for item in ocr_results[1:]:
+            prev_y = current_line[-1][0][0][1]
+            curr_y = item[0][0][1]
+
+            # Same visual row
+            if abs(curr_y - prev_y) < 8:
+                current_line.append(item)
+            else:
+                current_line.sort(key=lambda x: x[0][0][0])
+                lines.append(current_line)
+                current_line = [item]
+
+        current_line.sort(key=lambda x: x[0][0][0])
+        lines.append(current_line)
+
+        reconstructed = []
+
         for line in lines:
-            line_text = " | ".join([res[1] for res in line]) # Use '|' as column separator
-            structured_text += line_text + "\n"
-        
-        return structured_text
+            text = ""
+            prev_end = 0
 
+            for box, word, conf in line:
+                x_start = box[0][0]
+                x_end = box[1][0]
 
+                # spacing based on x distance
+                gap = max(1, int((x_start - prev_end) / 12))
+
+                text += (" " * gap) + word
+
+                prev_end = x_end
+
+            reconstructed.append(text.rstrip())
+
+        return "\n".join(reconstructed)
 
 # Singleton Instance
 ocr_service = OCRService()
