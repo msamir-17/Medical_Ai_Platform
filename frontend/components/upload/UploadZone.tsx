@@ -64,25 +64,30 @@ export function UploadZone() {
             )}
 
             {status === 'success' && (
-              <>
-                <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
-                  <CheckCircle2 size={32} />
-                </div>
-                <p className="text-lg font-bold text-slate-900">Analysis Complete!</p>
+            <div className="flex flex-col items-center animate-in zoom-in duration-300">
+              <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-4">
+                <CheckCircle2 size={32} />
+              </div>
+              <p className="text-xl font-bold text-slate-900 mb-6">Analysis Complete!</p>
+              
+              {/* --- THE FIX: Wrap buttons in a Flex row --- */}
+              <div className="flex flex-row items-center gap-4">
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setStatus('idle'); }}
-                  className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
+                  onClick={(e) => { e.stopPropagation(); setStatus('idle'); setUploadedId(null); }}
+                  className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all border border-slate-200"
                 >
                   Upload Another
                 </button>
+                
                 <Link 
-                    href={`/reports/${uploadedId}`}
-                    className="px-6 py-2.5 bg-indigo-600 text-black rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2"
-                  >
-                    View Report <ArrowRight size={16} />
+                  href={`/reports/${uploadedId}`}
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2"
+                >
+                  View Report <ArrowRight size={16} />
                 </Link>
-
-              </>
+              </div>
+              {/* ------------------------------------------ */}
+            </div>
             )}
         </div>
       </div>
