@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useMe } from '@/features/auth/useAuth';
 import { LayoutDashboard, Upload, MessageSquare, FileText } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -21,6 +22,7 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  const { data: user } = useMe(); // Fetch real user data
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
 
@@ -33,9 +35,6 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 h-screen w-60 border-r border-slate-200/80 bg-white p-4 hidden md:flex flex-col z-40">
       {/* Brand */}
       <div className="flex items-center gap-2 px-2 mb-8">
-        <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-          <span className="text-white font-bold text-sm">M</span>
-        </div>
         <span className="text-xl font-bold tracking-tight text-slate-900">MediAI</span>
       </div>
 
@@ -46,7 +45,7 @@ export function Sidebar() {
             key={item.name}
             href={item.href}
             className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg min-h-[44px]",
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg min-h-11",
               "text-slate-500 font-medium transition-colors duration-150",
               "hover:bg-slate-50 hover:text-slate-900",
               "focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:outline-none"
@@ -66,13 +65,13 @@ export function Sidebar() {
           </div>
           <div className="flex-1 overflow-hidden min-w-0">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Account</p>
-            <p className="text-xs font-bold text-slate-700 truncate">Patient User</p>
+            <p className="text-xs font-bold text-slate-700 truncate">{user?.email || "Loading..."}</p>
           </div>
         </div>
         
         <button 
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl min-h-[44px] text-red-500 hover:bg-red-50 transition-all font-bold text-xs focus-visible:ring-2 focus-visible:ring-red-500/20 focus-visible:outline-none"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl min-h-11 text-red-500 hover:bg-red-50 transition-all font-bold text-xs focus-visible:ring-2 focus-visible:ring-red-500/20 focus-visible:outline-none"
         >
           <LogOut size={18} />
           Sign Out

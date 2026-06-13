@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, FileText, CheckCircle2, Loader2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, Loader2, Link, ArrowRight } from 'lucide-react';
 import { reportService } from '@/features/reports/reportService';
 
 export function UploadZone() {
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState('');
+  const [uploadedId, setUploadedId] = useState<string | null>(null);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -16,7 +17,8 @@ export function UploadZone() {
     setStatus('uploading');
 
     try {
-      await reportService.upload(file);
+      const response = await reportService.upload(file);
+      setUploadedId(response.id);
       setStatus('success');
     } catch (error) {
       console.error(error);
@@ -73,6 +75,13 @@ export function UploadZone() {
                 >
                   Upload Another
                 </button>
+                <Link 
+                    href={`/reports/${uploadedId}`}
+                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2"
+                  >
+                    View Report <ArrowRight size={16} />
+                </Link>
+
               </>
             )}
         </div>
