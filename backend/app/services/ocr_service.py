@@ -10,7 +10,7 @@ class OCRService:
 
         print("Initializing High-Accuracy OCR Engine...")
 
-        self.reader = easyocr.Reader(['en'])
+        self.reader = easyocr.Reader(['en'],gpu=False )
 
     def extract_text(self, file_path: str):
         """
@@ -24,7 +24,7 @@ class OCRService:
             doc = fitz.open(file_path)
             for page in doc:
                 # Page ko image mein badlo
-                pix = page.get_pixmap(dpi=300)
+                pix = page.get_pixmap(dpi=150)
                 # Process the page using the 7-layer pipeline
                 page_text = self._process_visual_layer(pix.tobytes("png"))
                 full_structured_text += page_text + "\n--- Page Break ---\n"
@@ -48,7 +48,7 @@ class OCRService:
         enhanced_img = self._enhance_image(img_bytes)
         
         # 2. Layer 2: Raw Coordinate Extraction
-        raw_results = self.reader.readtext(enhanced_img, detail=1)
+        raw_results = self.reader.readtext(enhanced_img, detail=1, batch_size=4)
         
         # 3. Layer 3 & 4: Structural Reconstruction
         return self._reconstruct_layout(raw_results)

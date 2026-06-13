@@ -77,7 +77,7 @@ export function UploadZone() {
                 </button>
                 <Link 
                     href={`/reports/${uploadedId}`}
-                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2"
+                    className="px-6 py-2.5 bg-indigo-600 text-black rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2"
                   >
                     View Report <ArrowRight size={16} />
                 </Link>
