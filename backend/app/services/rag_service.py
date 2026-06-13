@@ -9,7 +9,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from rapidfuzz import process
 import json
 from langchain_core.prompts import ChatPromptTemplate
-
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -193,18 +193,18 @@ class RAGService:
         }
     
     def extract_patient_metadata(self, text: str):
-        """
-        Uses Llama 3.1 to extract structured patient metadata.
-        Keeps the same output schema while reducing Doctor/Hospital confusion.
-        """
+        # 1. RULE-BASED (Quick Regex check for Name)
+        name_match = re.search(r"Patient\s?Name\s?[:\-]\s?([A-Z\s]+)", text, re.I)
+        id_match = re.search(r"Patient\s?ID\s?[:\-]\s?(\d+)", text, re.I)
 
         prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Integrity Expert.
+            You are an API.
 
-        Extract the following fields and return ONLY valid JSON.
+            Return EXACTLY ONE valid JSON object.
 
-        REQUIRED JSON:
-        {{
+            Return ONLY:
+
+            {{
             "name": "",
             "age": "",
             "gender": "",
@@ -213,58 +213,13 @@ class RAGService:
             "doctor_name": "",
             "hospital_name": "",
             "sample_type": ""
-        }}
+            }}
 
-        STRICT RULES:
+            If any field is missing, use "N/A".
 
-        1. PATIENT NAME:
-        - Extract ONLY the patient's name.
-        - Never use doctor names or hospital names.
-
-        2. DOCTOR NAME:
-        - Must be an actual person's name.
-        - Look for labels like:
-            - Ref Dr
-            - Referred By
-            - Consultant
-            - Physician
-            - Pathologist
-        - NEVER return hospital/lab names.
-        - Examples:
-            ✓ "Dr Satyey G Tayade"
-            ✓ "Dr M S Kanojiya"
-            ✓ "Dr Jeeshan Shaikh"
-            ✗ "Millat Hospital"
-            ✗ "Anum Diagnostic"
-            ✗ "Main Lab"
-
-        3. HOSPITAL NAME:
-        - Extract facility/lab/hospital name.
-        - Examples:
-            ✓ Millat Hospital
-            ✓ Anum Diagnostic
-            ✓ SRL Diagnostics
-
-        4. SAMPLE TYPE:
-        - Prefer biological sample names:
-            Blood, Serum, Plasma, Urine, Biopsy.
-        - Ignore tube labels like EDTA, Heparin, Fluoride.
-
-        5. IGNORE:
-        - Addresses
-        - Phone numbers
-        - Footer text
-        - ISO/NABL details
-        - Registration numbers
-
-        6. If any value cannot be determined, return "N/A".
-
-        Return ONLY raw JSON.
-
-        MEDICAL TEXT:
-        {text}
-        """)
-
+            Text:
+            {text}
+            """)
         chain = prompt | self.llm
 
         # Use full text (or truncate only if extremely large)
@@ -278,11 +233,10 @@ class RAGService:
         print("=" * 60 + "\n")
 
         try:
-            content = response.content
-            start = content.find("{")
-            end = content.rfind("}") + 1
-
-            metadata = json.loads(content[start:end])
+            match = re.search(r"\{.*\}", response.content, re.DOTALL)
+            if not match:
+                raise ValueError("No JSON object found in LLM response")
+            metadata = json.loads(match.group(0))
 
             # ----------------------------
             # Safety cleanup in Python

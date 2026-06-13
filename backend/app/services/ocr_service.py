@@ -14,31 +14,45 @@ class OCRService:
 
     def extract_text(self, file_path: str):
         """
-        THE MASTER ENTRY POINT: 
-        Coordinates the 7-Layer logic for both PDFs and Images.
+        Digital extraction first (with block sorting) -> EasyOCR fallback.
         """
-        full_structured_text = ""
-        
-        # --- PATH A: Handling PDF Files ---
-        if file_path.lower().endswith('.pdf'):
-            doc = fitz.open(file_path)
-            for page in doc:
-                # Page ko image mein badlo
-                pix = page.get_pixmap(dpi=150)
-                # Process the page using the 7-layer pipeline
-                page_text = self._process_visual_layer(pix.tobytes("png"))
-                full_structured_text += page_text + "\n--- Page Break ---\n"
-            doc.close()
+        doc = fitz.open(file_path)
+        full_text = ""
+
+        for page_num, page in enumerate(doc):
+            # 1. Try Digital Extraction with Structural Sorting
+            words = page.get_text("words") # (x0, y0, x1, y1, word, block_no, line_no, word_no)
             
-        # --- PATH B: Handling Image Files (PNG, JPG) ---
-        else:
-            with open(file_path, "rb") as f:
-                img_bytes = f.read()
-            # Process the single image using the same 7-layer pipeline
-            full_structured_text = self._process_visual_layer(img_bytes)
+            # Agar meaningful text hai (>200 chars)
+            if len(words) > 50:
+                print(f"⚡ Page {page_num+1}: Using Structural Digital Extraction")
+                # Sort by Block No, then Line No, then X-coordinate
+                words.sort(key=lambda w: (w[5], w[6], w[0]))
+                
+                lines = []
+                if words:
+                    cur_block, cur_line = words[0][5], words[0][6]
+                    cur_line_words = []
+                    for w in words:
+                        if w[5] == cur_block and w[6] == cur_line:
+                            cur_line_words.append(w[4])
+                        else:
+                            lines.append(" ".join(cur_line_words))
+                            cur_line_words = [w[4]]
+                            cur_block, cur_line = w[5], w[6]
+                    lines.append(" ".join(cur_line_words))
+                page_text = "\n".join(lines)
+            
+            else:
+                # 2. Fallback to Vision OCR for Scanned Pages
+                print(f"📸 Page {page_num+1}: Low digital text. Running EasyOCR...")
+                pix = page.get_pixmap(dpi=150)
+                page_text = self._process_visual_layer(pix.tobytes("png"))
+            
+            full_text += page_text + "\n--- Page Break ---\n"
 
-        return full_structured_text
-
+        doc.close()
+        return full_text
     def _process_visual_layer(self, img_bytes):
         """
         REUSABLE COMPONENT: Runs Enhancement -> Raw OCR -> Layout Reconstruction
@@ -71,12 +85,9 @@ class OCRService:
             img_bytes = pix.tobytes("png")
 
             # Get OCR with confidence
-            results = self.reader.readtext(
-                img_bytes,
-                detail=1
-            )
-
-            page_text = []
+            results = self.reader.readtext(img_bytes, detail=1)
+            page_text = self._reconstruct_layout(results)
+            full_text += page_text + "\n"
 
             for result in results:
 
@@ -143,58 +154,64 @@ class OCRService:
     # MEDICAL VALUE EXTRACTION
     # -----------------------------------------
     def extract_medical_values(self, text: str):
-
-
-        patterns = {
-            
-            # Standard
-            "glucose": r"glucose[^0-9]+(\d+\.?\d*)",
-
-            "hba1c": r"hb\s?a1c[^0-9]+(\d+\.?\d*)",
-            
-            "cholesterol": r"cholesterol[^0-9]+(\d+\.?\d*)",
-            
-            "triglycerides": r"triglycerides[^0-9]+(\d+\.?\d*)",
-            
-            # CBC
-            "haemoglobin": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
-
-            "wbc": r"w\.?b\.?c[^0-9]+(\d+)",
-            
-            "platelets": r"platelet[^0-9]+(\d+)",
-            
-            # KFT
-            "creatinine": r"creatinine[^0-9]+(\d+\.?\d*)",
-
-            "uric acid": r"uric\s?acid[^0-9]+(\d+\.?\d*)",
-            
-            # ABG
-            "ph": r"p[Hh][:\s]+([0-9]\.\d+)", 
-
-            "pco2": r"pco2[^0-9]+(\d+\.?\d*)",
-            
-            "po2": r"po2[^0-9]+(\d+\.?\d*)",
-
-            # NEW: Inflammatory/Fever
-            "crp": r"c-reactive\s?protein[^0-9]+(\d+\.?\d*)",
-
-            "esr": r"esr[^0-9]+(\d+)",
-            
-            # NEW: Thyroid
-            "tsh": r"tsh[^0-9]+(\d+\.?\d*)"
-        }
+        """
+        Extract medical values line-by-line instead of searching
+        the entire document. This greatly reduces wrong matches.
+        """
 
         extracted = {}
 
-        for key, pattern in patterns.items():
+        # Normalize lines
+        lines = [
+            re.sub(r"\s+", " ", line).strip()
+            for line in text.splitlines()
+            if line.strip()
+        ]
 
-            match = re.search(pattern, text, re.IGNORECASE) 
+        field_patterns = {
+            "glucose": r"\bglucose\b",
+            "hba1c": r"\bhb\s*a1c\b",
+            "cholesterol": r"\bcholesterol\b",
+            "triglycerides": r"\btriglycerides\b",
+            "haemoglobin": r"\bha?emoglobin\b",
+            "wbc": r"\bw\.?b\.?c\b|\btotal white\b",
+            "platelets": r"\bplatelet",
+            "creatinine": r"\bcreatinine\b",
+            "uric acid": r"\buric\s+acid\b",
+            "ph": r"\bph\b",
+            "pco2": r"\bpco2\b",
+            "po2": r"\bpo2\b",
+            "crp": r"\bc-?reactive protein\b|\bcrp\b",
+            "esr": r"\besr\b",
+            "tsh": r"\btsh\b",
+        }
 
-            if match:
-                extracted[key] = match.group(1)
+        for line in lines:
+            lower_line = line.lower()
+
+            for key, pattern in field_patterns.items():
+
+                if key in extracted:
+                    continue
+
+                if re.search(pattern, lower_line, re.IGNORECASE):
+
+                    numbers = re.findall(r"\d+(?:\.\d+)?", line)
+
+                    if not numbers:
+                        continue
+
+                    # pH should prefer decimal values like 7.279
+                    if key == "ph":
+                        decimal_values = [n for n in numbers if "." in n]
+                        if decimal_values:
+                            extracted[key] = decimal_values[0]
+                        continue
+
+                    # For all other tests, use the first number on the same line
+                    extracted[key] = numbers[0]
 
         return extracted
-
     def interpret_markers(self, values: dict):
         """Provides human-readable meaning for lab markers."""
         # Industry Standard: Reference ranges (Common values)

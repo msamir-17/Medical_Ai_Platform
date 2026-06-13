@@ -12,7 +12,7 @@ from app.models.report import Report
 from app.services.diabetes_service import diabetes_service
 from app.routers.auth_routes import get_current_user
 from app.services.heart_service import heart_service
-
+import time 
 
 
 
@@ -42,6 +42,25 @@ async def upload_report(
     # 2. Save file locally
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    print(f"\n--- ⏱️ STARTING PERFORMANCE PROFILE ---")
+    
+    t0 = time.time()
+    raw_text = ocr_service.extract_text(file_path)
+    ocr_time = time.time() - t0
+    print(f"📦 Vision OCR: {ocr_time:.2f}s")
+
+    t1 = time.time()
+    patient_metadata = rag_service.extract_patient_metadata(raw_text)
+    metadata_time = time.time() - t1
+    print(f"🧠 Metadata LLM: {metadata_time:.2f}s")
+
+    t2 = time.time()
+    rag_service.index_report(raw_text, user_id=current_user_id, report_id=file_id)
+    faiss_time = time.time() - t2
+    print(f"💾 FAISS Indexing: {faiss_time:.2f}s")
+    
+    print(f"--- 🏁 TOTAL PIPELINE TIME: {time.time() - t0:.2f}s ---\n")
 
     final_risk_score = None
     final_shap_values = []
@@ -121,7 +140,6 @@ async def upload_report(
         else:
             print("⚠️ DEBUG: No 'glucose' key found in extracted_values. Skipping prediction.") 
 
-        patient_metadata = rag_service.extract_patient_metadata(raw_text)
 
         # Right before rag_service.index_report:
         print(f"📁 UPLOAD DEBUG: Saving report to folder of user: {current_user_id}")
@@ -199,7 +217,6 @@ async def get_report_details(report_id: str, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=404, detail="Report not found")
         
     return report
-
 
 @router.delete("/{report_id}")
 async def delete_report(
