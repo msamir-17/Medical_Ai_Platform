@@ -9,7 +9,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT configuration (industry secret keys)
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-it-later")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440 # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 24 hours
 
 class AuthService:
     def verify_password(self, plain_password: str, hashed_password: str):

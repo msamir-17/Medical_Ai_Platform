@@ -27,11 +27,22 @@
         // Response interceptor for easy error handling
 
     api.interceptors.response.use(
-        (Response) => Response,
-        (error) => {
-            console.error('API Error:', error.response?.data?.detail || error.message);
-            return Promise.reject(error);
+    (response) => response,
+    (error) => {
+        // Agar status 401 hai (Token expire ya invalid)
+        if (error.response?.status === 401) {
+            console.error("🔒 Auth Guard: Session invalid or expired.");
+            
+            // 1. Clear Zustand Store (Wallet khali karo)
+            const { logout } = useAuthStore.getState();
+            logout();
+
+            // 2. Redirect to Login
+            if (typeof window !== 'undefined') {
+                window.location.href = '/login';
+            }
         }
-    );
+        return Promise.reject(error);
+    });
 
     export default api;
