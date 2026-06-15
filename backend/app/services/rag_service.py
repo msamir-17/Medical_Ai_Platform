@@ -100,8 +100,9 @@ class RAGService:
         return score, reasons
     
     def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
-        print("DEBUG report_ids:", report_ids)
-        print("DEBUG type:", type(report_ids))
+        
+        print(f"\n🚀 [DEPLOYED VERSION: 2026-06-15-V1]")
+        print(f"👤 USER: {user_id} | MODE: {mode} | IDs: {report_ids}")
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
         if mode == "overview":
@@ -158,7 +159,12 @@ class RAGService:
 
             if os.path.exists(path):
                 db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+
                 docs = db.similarity_search(question, k=3)
+                print(f"📄 Found {len(docs)} chunks for path: {path}")
+                for i, d in enumerate(docs):
+                    # Yeh terminal mein dikhayega ki AI ne kya 'padha'
+                    print(f"   [Chunk {i}] Content: {d.page_content[:150]}...")
 
                 print(f"📄 Retrieved Docs from {rid[:5]}: {len(docs)}")
 
