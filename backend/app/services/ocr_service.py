@@ -4,128 +4,128 @@ import re
 from PIL import Image, ImageOps, ImageEnhance
 import io
 
+
+
 class OCRService:
 
     def __init__(self):
-
         print("Initializing High-Accuracy OCR Engine...")
+        self.reader = easyocr.Reader(['en'], gpu=False)
+ 
+        self._last_pdf_path = None
 
-        self.reader = easyocr.Reader(['en'],gpu=False )
-
-    def extract_text(self, file_path: str):
+    def extract_text(self, file_path: str) -> str:
         """
-        Digital extraction first (with block sorting) -> EasyOCR fallback.
+        Digital extraction first (with row grouping) → EasyOCR fallback.
         """
+        self._last_pdf_path = file_path if file_path.lower().endswith(".pdf") else None
+ 
         doc = fitz.open(file_path)
         full_text = ""
-
+ 
         for page_num, page in enumerate(doc):
-            # 1. Try Digital Extraction with Structural Sorting
-            words = page.get_text("words") # (x0, y0, x1, y1, word, block_no, line_no, word_no)
-            
-            # Agar meaningful text hai (>200 chars)
+            words = page.get_text("words")  # (x0, y0, x1, y1, "text", block_no, line_no, word_no)
+ 
             if len(words) > 30:
                 print(f"⚡ Page {page_num+1}: Using Structural Digital Extraction")
-                # Remove empty OCR tokens
+                
+                # Filter empty values safely
                 words = [w for w in words if str(w[4]).strip()]
-                # Sort by Block No, then Line No, then X-coordinate
-                words.sort(key=lambda w: (w[5], w[6], w[0]))
+                
+                # Group words that share a similar vertical coordinate (Y axis)
+                # We round Y coordinates to the nearest 4 pixels to account for baseline shifts.
+                row_groups = {}
+                for w in words:
+                    y_coord = round(w[1] / 4) * 4
+                    if y_coord not in row_groups:
+                        row_groups[y_coord] = []
+                    row_groups[y_coord].append(w)
                 
                 lines = []
-                if words:
-                    cur_block, cur_line = words[0][5], words[0][6]
-                    cur_line_words = []
-                    for w in words:
-                        if w[5] == cur_block and w[6] == cur_line:
-                            cur_line_words.append(w[4])
-                        else:
-                            lines.append(" ".join(cur_line_words))
-                            cur_line_words = [w[4]]
-                            cur_block, cur_line = w[5], w[6]
-                    lines.append(" ".join(cur_line_words))
+                # Sort rows from top to bottom
+                for y in sorted(row_groups.keys()):
+                    # Sort words within the same row from left to right
+                    row_words = sorted(row_groups[y], key=lambda w: w[0])
+                    line_text = " ".join([w[4] for w in row_words])
+                    lines.append(line_text)
+                
                 page_text = "\n".join(lines)
-            
+ 
             else:
-                # 2. Fallback to Vision OCR for Scanned Pages
                 print(f"📸 Page {page_num+1}: Low digital text. Running EasyOCR...")
-                pix = page.get_pixmap(dpi=150)
+                pix = page.get_pixmap(dpi=300)
                 page_text = self._process_visual_layer(pix.tobytes("png"))
-            
+ 
             full_text += page_text + "\n--- Page Break ---\n"
-
+ 
         doc.close()
         return full_text
+    
     def _process_visual_layer(self, img_bytes):
         """
-        REUSABLE COMPONENT: Runs Enhancement -> Raw OCR -> Layout Reconstruction
-        This ensures both Images and PDFs get the same HIGH accuracy.
+        FAST VISUAL LAYER: Processes images within a 10-second window 
+        by using targeted structural configurations.
         """
-        # 1. Layer 1: Image Enhancement (Contrast/Sharpness)
         enhanced_img = self._enhance_image(img_bytes)
         
-        # 2. Layer 2: Raw Coordinate Extraction
-        raw_results = self.reader.readtext(enhanced_img, detail=1, batch_size=8)
+        # Speed Optimization: Set optimal batch sizes and restrict thresholds 
+        # to prevent EasyOCR from spending time scanning empty white backgrounds.
+        raw_results = self.reader.readtext(
+            enhanced_img, 
+            detail=1, 
+            batch_size=16,      # Increased batch size for faster processing
+            width_ths=0.5,      # Lower merge window reduces processing loops
+            add_margin=0.1,
+            slope_ths=0.1,      # Prevents scanning skewed lines
+            ycenter_ths=0.5
+        )
         
-        # 3. Layer 3 & 4: Structural Reconstruction
         return self._reconstruct_layout(raw_results)
 
     # -----------------------------------------
     # PDF OCR
     # -----------------------------------------
     def _extract_from_pdf_visually(self, path):
-
         doc = fitz.open(path)
-
         full_text = ""
 
         for page_num, page in enumerate(doc):
-
-            # Higher quality rendering
-            pix = page.get_pixmap(dpi=300)
-            # pix = page.get_pixmap(dpi=150)
-
+            # Speed Optimization: Use 200 DPI instead of 300 DPI.
+            # This balances processing speed with text clarity.
+            pix = page.get_pixmap(dpi=200)
             img_bytes = pix.tobytes("png")
 
-            # Get OCR with confidence
-            results = self.reader.readtext(img_bytes, detail=1)
-            page_text = self._reconstruct_layout(results)
-            full_text += page_text + "\n"
-
+            results = self.reader.readtext(img_bytes, detail=1, batch_size=16)
+            
+            page_text_elements = []
             for result in results:
-
                 bbox, text, confidence = result
+                # Fast numeric rescue rule
+                if confidence > 0.40 or (any(char.isdigit() for char in text) and confidence > 0.22):
+                    page_text_elements.append(text)
 
-                # Filter garbage OCR
-                if confidence > 0.45:
-                    page_text.append(text)
-
-            full_text += " ".join(page_text) + " "
+            full_text += " ".join(page_text_elements) + "\n"
 
         doc.close()
-
         return self._normalize_text(full_text)
-
     # -----------------------------------------
     # IMAGE OCR
     # -----------------------------------------
     def _extract_from_image(self, path):
-
-        results = self.reader.readtext(
-            path,
-            detail=1
-        )
-
+        # Open and adaptively resize the image if it is too large, saving processing time
+        img = Image.open(path)
+        if max(img.size) > 2000:
+            img.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
+            
+        results = self.reader.readtext(img, detail=1, batch_size=16)
         text_parts = []
 
         for result in results:
-
             bbox, text, confidence = result
-
-            if confidence > 0.45:
+            if confidence > 0.40 or (any(char.isdigit() for char in text) and confidence > 0.22):
                 text_parts.append(text)
 
         text = " ".join(text_parts)
-
         return self._normalize_text(text)
 
     # -----------------------------------------
@@ -156,81 +156,128 @@ class OCRService:
    # -----------------------------------------
     # MEDICAL VALUE EXTRACTION
     # -----------------------------------------
-    def extract_medical_values(self, text: str):
+    def extract_medical_values(self, text: str) -> dict:
+        """
+        Hybrid Extraction Strategy
 
-        patterns = {
-            "glucose": r"glucose[^0-9]+(\d+\.?\d*)",
-            "hba1c": r"hb\s?a1c[^0-9]+(\d+\.?\d*)",
-            "cholesterol": r"cholesterol[^0-9]+(\d+\.?\d*)",
-            "triglycerides": r"triglycerides[^0-9]+(\d+\.?\d*)",
-            "haemoglobin": r"ha?emoglobin[^0-9]+(\d+\.?\d*)",
-            "wbc": r"w\.?b\.?c[^0-9]+(\d+)",
-            "platelets": r"platelet[^0-9]+(\d+)",
-            "creatinine": r"creatinine[^0-9]+(\d+\.?\d*)",
-            "uric acid": r"uric\s?acid[^0-9]+(\d+\.?\d*)",
-            "ph": r"p[Hh][:\s]+([0-9]\.\d+)",
-            "pco2": r"pco2[^0-9]+(\d+\.?\d*)",
-            "po2": r"po2[^0-9]+(\d+\.?\d*)",
-            "crp": r"c-reactive\s?protein[^0-9]+(\d+\.?\d*)",
-            "esr": r"esr[^0-9]+(\d+)",
-            "tsh": r"tsh[^0-9]+(\d+\.?\d*)",
-        }
+        Layer 1:
+            Coordinate-aware extraction from digital PDFs.
 
-        extracted = {}
+        Layer 2:
+            Regex-based extraction from reconstructed text.
 
-        for key, pattern in patterns.items():
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                extracted[key] = match.group(1)
+        Final:
+            Merge both, giving priority to coordinate extraction.
+        """
 
-        return extracted
-    def interpret_markers(self, values: dict):
-        """Provides human-readable meaning for lab markers."""
-        # Industry Standard: Reference ranges (Common values)
-        reference = {
-            "haemoglobin": {"min": 13.5, "max": 17.5, "unit": "g/dL", "label": "Blood Level"},
-            "wbc": {"min": 4000, "max": 11000, "unit": "/cmm", "label": "Immunity (WBC)"},
-            "platelets": {"min": 150000, "max": 450000, "unit": "/cmm", "label": "Blood Clotting"},
-            "glucose": {"min": 70, "max": 100, "unit": "mg/dL", "label": "Blood Sugar"},
-            "cholesterol": {"min": 120, "max": 200, "unit": "mg/dL", "label": "Heart Fat"},
-            "ph": {"min": 7.35, "max": 7.45, "unit": "", "label": "Blood Acidity (pH)"},
-            "pco2": {"min": 35, "max": 45, "unit": "mmHg", "label": "Carbon Dioxide"},
-            "po2": {"min": 80, "max": 100, "unit": "mmHg", "label": "Oxygen Level"}
+        coord_results = {}
+        regex_results = {}
+
+        # -----------------------------
+        # Layer 1 : Coordinate parser
+        # -----------------------------
+        if getattr(self, "_last_pdf_path", None):
+            try:
+                print("🎯 Layer 1: Coordinate Extraction")
+
+                high_fidelity_lines = self._get_high_fidelity_lines(
+                    self._last_pdf_path
+                )
+
+                coord_results = self._parse_lines_smart(
+                    high_fidelity_lines
+                )
+
+                print("COORD RESULTS:", coord_results)
+
+            except Exception as e:
+                print(f"⚠️ Coordinate parser failed: {e}")
+
+        # -----------------------------
+        # Layer 2 : Regex parser
+        # -----------------------------
+        print("📄 Layer 2: Regex Extraction")
+
+        regex_results = self._parse_lines_smart(
+            text.splitlines()
+        )
+        print("REGEX RESULTS:", regex_results)
+        # -----------------------------
+        # Merge
+        # Coordinate results override regex
+        # -----------------------------
+        final_results = regex_results.copy()
+        final_results.update(coord_results)
+
+        print(f"✅ Final extracted markers: {final_results}")
+
+        return final_results
+    
+    def interpret_markers(self, values: dict) -> list:
+
+        reference_ranges = {
+            "glucose": (70, 100, "mg/dL"),
+            "hba1c": (4.0, 5.6, "%"),
+            "cholesterol": (0, 200, "mg/dL"),
+            "triglycerides": (0, 150, "mg/dL"),
+            "haemoglobin": (12, 17, "g/dL"),
+            "wbc": (4000, 11000, "/cmm"),
+            "platelets": (150000, 450000, "/cmm"),
+            "creatinine": (0.5, 1.5, "mg/dL"),
+            "uric acid": (3.4, 7.0, "mg/dL"),
+            "crp": (0, 6, "mg/L"),
+            "esr": (0, 20, "mm/hr"),
+            "tsh": (0.4, 4.5, "uIU/mL"),
         }
 
         interpreted = []
-        for key, value in values.items():
-            ref = reference.get(key)
-            if ref:
-                val_float = float(value)
-                status = "Normal"
-                color = "green"
-                
-                if val_float < ref["min"]:
+
+        for marker, value in values.items():
+
+            if marker not in reference_ranges:
+                continue
+
+            try:
+                value = float(value)
+
+                low, high, unit = reference_ranges[marker]
+
+                if value < low:
                     status = "Low"
                     color = "blue"
-                elif val_float > ref["max"]:
+                elif value > high:
                     status = "High"
                     color = "red"
+                else:
+                    status = "Normal"
+                    color = "green"
 
                 interpreted.append({
-                    "marker": key.upper(),
+                    "marker": marker.upper(),
                     "value": value,
-                    "unit": ref["unit"],
-                    "meaning": ref["label"],
+                    "unit": unit,
                     "status": status,
-                    "color": color
+                    "color": color,
+                    "ref_range": f"{low} - {high}",
                 })
+
+            except Exception:
+                pass
+
         return interpreted
     
     def _enhance_image(self, img_bytes):
-        """LAYER 1: Pixel Pre-processing. Standardizes contrast and removes color noise."""
-        img = Image.open(io.BytesIO(img_bytes)).convert('L') # Convert to Grayscale
-        img = ImageOps.autocontrast(img)
-        img = ImageEnhance.Sharpness(img).enhance(2.0)
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        return buf.getvalue()
+        """FAST PIXEL ENHANCEMENT: Runs in milliseconds using light PIL operations."""
+        img = Image.open(io.BytesIO(img_bytes))
+        img = ImageOps.grayscale(img)
+        
+        # Increase contrast slightly to sharpen numeric values without generating noise
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.5) 
+        
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        return img_byte_arr.getvalue()
 
     def _reconstruct_layout(self, ocr_results):
         """
@@ -280,6 +327,161 @@ class OCRService:
             reconstructed.append(text.rstrip())
 
         return "\n".join(reconstructed)
+
+    def _parse_lines_smart(self, lines: list[str]) -> dict:
+        """
+        Smart parser that extracts RESULT values while avoiding
+        reference ranges whenever possible.
+        """
+        print("=" * 80)
+        print("DEBUG: Total lines =", len(lines))
+        for i, line in enumerate(lines[:30]):
+            print(f"{i}: {repr(line)}")
+
+        print("=" * 80)
+
+        extracted = {}
+
+        field_patterns = {
+            "glucose": r"\bglucose\b",
+            "hba1c": r"\bhb\s*a1c\b",
+            "cholesterol": r"\bcholesterol\b",
+            "triglycerides": r"\btriglycerides\b",
+            "haemoglobin": r"\bha?emoglobin\b",
+            "wbc": r"\b(total\s*w\.?b\.?c|w\.?b\.?c)\b",
+            "platelets": r"\bplatelet",
+            "creatinine": r"\bcreatinine\b",
+            "uric_acid": r"\buric\s*acid\b",
+            "ph": r"\bph\b",
+            "pco2": r"\bpco2\b",
+            "po2": r"\bpo2\b",
+            "crp": r"\bcrp\b|\bc-?reactive protein\b",
+            "esr": r"\besr\b",
+            "tsh": r"\btsh\b",
+        }
+
+        for raw_line in lines:
+            
+
+            line = re.sub(r"\s+", " ", raw_line).strip()
+
+            if not line:
+                continue
+
+            lower_line = line.lower()
+
+            for key, pattern in field_patterns.items():
+
+                if key in extracted:
+                    continue
+                print(f"LINE: {line}")
+                print(f"LOWER: {lower_line}")
+
+                if not re.search(pattern, lower_line):
+                    continue
+
+                all_numbers = re.findall(
+                    r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?![A-Za-z])",
+                    line
+                )
+
+                if not all_numbers:
+                    continue
+
+                candidate = None
+
+                # -------------------------
+                # pH special handling
+                # -------------------------
+                if key == "ph":
+
+                    decimals = [
+                        n for n in all_numbers
+                        if "." in n
+                    ]
+
+                    if decimals:
+                        candidate = decimals[0]
+                    print("NUMBERS:", all_numbers)
+
+                else:
+
+                    # Detect reference range
+                    range_match = re.search(
+                        r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",
+                        line
+                    )
+
+                    if range_match:
+
+                        low, high = range_match.groups()
+
+                        for num in all_numbers:
+                            if num != low and num != high:
+                                candidate = num
+                                break
+
+                    # fallback
+                    if candidate is None:
+                        candidate = all_numbers[0]
+                        print("NUMBERS:", all_numbers)
+
+                if candidate is not None:
+                    extracted[key] = candidate
+                    print(f"✅ MATCHED FIELD: {key}")
+                    print(f"📄 LINE: {line}")
+                    print(f"🔢 NUMBERS FOUND: {all_numbers}")
+                    print(f"🎯 CANDIDATE: {candidate}")
+                    print(f"🔥 STORED: {key} -> {candidate}")
+                    print(f"🔥 STORED: {key} -> {candidate}")
+
+        return extracted
+
+    def _get_high_fidelity_lines(self, file_path: str):
+        """
+        LAYER 1: Uses PyMuPDF coordinates to group words into 
+        perfectly aligned rows (Left-to-Right).
+        """
+        import fitz
+        doc = fitz.open(file_path)
+        structured_lines = []
+
+        for page in doc:
+            # Get words: (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+            words = page.get_text("words")
+
+            print("\n===== RAW WORDS =====")
+            for w in words[:20]:
+                print(w)
+            print("=====================\n")
+            
+            # Group words by their Block and Line number
+            rows = {}
+
+            for w in words:
+                block_no = w[5]
+                line_no = w[6]
+
+                key = (block_no, line_no)
+                rows.setdefault(key, []).append(w)
+
+            structured_lines = []
+
+            for key in sorted(rows.keys):
+                row = sorted(rows[key], key=lambda x: x[0])  # x coordinate
+                structured_lines.append(
+                    " ".join(word[4] for word in row)
+                )
+
+        
+        doc.close()
+        print("\n===== HIGH FIDELITY LINES =====")
+        for line in structured_lines[:30]:
+            print(repr(line))
+        print("================================\n")
+
+        
+        return structured_lines
 
 # Singleton Instance
 ocr_service = OCRService()

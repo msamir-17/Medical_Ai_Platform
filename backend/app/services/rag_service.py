@@ -18,7 +18,11 @@ class RAGService:
     def __init__(self):
         print("Loading RAG Service Components...")
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=250)
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, 
+            chunk_overlap=200,
+            separators=["\n\n", "\n", " ", ""]
+        )
         self.vector_db_path = "vector_stores"
         os.makedirs(self.vector_db_path, exist_ok=True)
 
@@ -199,36 +203,51 @@ class RAGService:
         }
     
     def extract_patient_metadata(self, text: str):
-        # 1. RULE-BASED (Quick Regex check for Name)
-        name_match = re.search(r"Patient\s?Name\s?[:\-]\s?([A-Z\s]+)", text, re.I)
-        id_match = re.search(r"Patient\s?ID\s?[:\-]\s?(\d+)", text, re.I)
+    # ----------------------------
+    # Regex fallback
+    # ----------------------------
+        name_match = re.search(
+            r"Patient\s*Name\s*[:\-]?\s*([A-Za-z.\s]+)",
+            text,
+            re.IGNORECASE,
+        )
+
+        id_match = re.search(
+            r"Patient\s*ID\s*[:\-]?\s*(\d+)",
+            text,
+            re.IGNORECASE,
+        )
 
         prompt = ChatPromptTemplate.from_template("""
-            You are an API.
+    You are a JSON extraction API.
 
-            Return EXACTLY ONE valid JSON object.
+    Rules:
+    1. Return ONLY one valid JSON object.
+    2. Do NOT use markdown.
+    3. Do NOT wrap inside ```json.
+    4. Do NOT explain anything.
+    5. If information is missing, return "N/A".
+    6. Preserve values exactly as written in the report.
 
-            Return ONLY:
+    Return exactly:
 
-            {{
-            "name": "",
-            "age": "",
-            "gender": "",
-            "date_of_birth": "",
-            "patient_id": "",
-            "doctor_name": "",
-            "hospital_name": "",
-            "sample_type": ""
-            }}
+    {{
+        "name": "",
+        "age": "",
+        "gender": "",
+        "date_of_birth": "",
+        "patient_id": "",
+        "doctor_name": "",
+        "hospital_name": "",
+        "sample_type": ""
+    }}
 
-            If any field is missing, use "N/A".
+    Report Text:
+    {text}
+    """)
 
-            Text:
-            {text}
-            """)
         chain = prompt | self.llm
 
-        # Use full text (or truncate only if extremely large)
         response = chain.invoke({
             "text": text
         })
@@ -239,42 +258,67 @@ class RAGService:
         print("=" * 60 + "\n")
 
         try:
+
             match = re.search(r"\{.*\}", response.content, re.DOTALL)
+
             if not match:
-                raise ValueError("No JSON object found in LLM response")
+                raise ValueError("No JSON object found.")
+
             metadata = json.loads(match.group(0))
 
             # ----------------------------
-            # Safety cleanup in Python
+            # Normalize empty values
             # ----------------------------
-            doctor = str(metadata.get("doctor_name", "")).strip()
+            for key in [
+                "name",
+                "age",
+                "gender",
+                "date_of_birth",
+                "patient_id",
+                "doctor_name",
+                "hospital_name",
+                "sample_type",
+            ]:
+                value = str(metadata.get(key, "")).strip()
 
-            blocked_words = [
-                "hospital",
-                "diagnostic",
+                if value == "":
+                    metadata[key] = "N/A"
+                else:
+                    metadata[key] = value
+
+            # ----------------------------
+            # Regex fallback
+            # ----------------------------
+            if metadata["name"] == "N/A" and name_match:
+                metadata["name"] = name_match.group(1).strip()
+
+            if metadata["patient_id"] == "N/A" and id_match:
+                metadata["patient_id"] = id_match.group(1).strip()
+
+            # ----------------------------
+            # Doctor cleanup
+            # ----------------------------
+            doctor = metadata["doctor_name"].strip()
+
+            blocked_exact = {
+                "main lab",
+                "diagnostic centre",
+                "diagnostic center",
                 "laboratory",
-                "lab",
-                "centre",
-                "center",
+                "hospital",
                 "clinic",
-            ]
+            }
 
-            doctor = str(metadata.get("doctor_name", "")).strip()
-
-            if any(word in doctor.lower() for word in blocked_words):
+            if doctor.lower() in blocked_exact:
                 metadata["doctor_name"] = "N/A"
 
-            sample = str(metadata.get("sample_type", "")).strip().lower()
-
-            if sample in ["edta", "heparin", "fluoride"]:
-                metadata["sample_type"] = "N/A"
-            
             print("✅ Parsed metadata:", metadata)
             print("👨‍⚕️ Doctor extracted:", metadata.get("doctor_name"))
 
             return metadata
 
         except Exception as e:
+
             print(f"❌ Metadata Extraction Error: {e}")
 
             return {
@@ -287,7 +331,5 @@ class RAGService:
                 "hospital_name": "N/A",
                 "sample_type": "N/A",
             }
-
-
 # Singleton instance
 rag_service = RAGService()
