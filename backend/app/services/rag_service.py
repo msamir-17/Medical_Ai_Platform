@@ -4,6 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import os
+import time
 import json
 from langchain_core.output_parsers import JsonOutputParser
 from rapidfuzz import process
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class RAGService:
+
     def __init__(self):
         print("Loading RAG Service Components...")
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -34,6 +36,9 @@ class RAGService:
             groq_api_key=api_key, 
             model_name="llama-3.1-8b-instant"
         )
+
+        self._index_cache = {} 
+
 
     def index_report(self, text: str, user_id: str, report_id: str):
         chunks = self.text_splitter.split_text(text)
@@ -103,10 +108,12 @@ class RAGService:
         score = 0 if len(unique_names) > 1 else 100
         return score, reasons
     
+
     def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
         
         print(f"\n🚀 [DEPLOYED VERSION: 2026-06-15-V1]")
         print(f"👤 USER: {user_id} | MODE: {mode} | IDs: {report_ids}")
+
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
         if mode == "overview":
@@ -142,6 +149,15 @@ class RAGService:
             chain = prompt | self.llm
             response = chain.invoke({"inventory": json.dumps(inventory)})
             return {"answer": response.content, "sources": "Clinical Registry"}
+
+
+
+
+        
+
+
+
+        
         # 🟡 MODE 2 & 3: COMPARE / SINGLE (FAISS Context Retrieval)
         all_contexts = []
         
@@ -163,6 +179,19 @@ class RAGService:
 
             if os.path.exists(path):
                 db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+
+                t_start = time.time()
+                
+                if path in self._index_cache:
+                    print(f"⚡ CACHE HIT: Using in-memory index for {rid[:8]}")
+                    db = self._index_cache[path]
+                else:
+                    print(f"💾 CACHE MISS: Loading from disk for {rid[:8]}")
+                    db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+                    self._index_cache[path] = db # Save to RAM
+                
+                print(f"⏱️ DEBUG: FAISS Retrieval Time: {time.time() - t_start:.4f}s")
+
 
                 docs = db.similarity_search(question, k=3)
                 print(f"📄 Found {len(docs)} chunks for path: {path}")
@@ -201,7 +230,9 @@ class RAGService:
             "answer": response.content, 
             "sources": f"Analyzed {len(report_ids)} active documents"
         }
+
     
+
     def extract_patient_metadata(self, text: str):
     # ----------------------------
     # Regex fallback

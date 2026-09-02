@@ -9,56 +9,56 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        /* Primary Brand Palette */
+        /* Primary Brand Palette — Clinical Teal-Blue */
         'primary': {
-          '50': '#EEF2FF',
-          '100': '#E0E7FF',
-          '200': '#C7D2FE',
-          '400': '#818CF8',
-          '500': '#6366F1',
-          '600': '#4F46E5',
-          '700': '#4338CA',
+          '50': '#EFF6FF',
+          '100': '#DBEAFE',
+          '200': '#BFDBFE',
+          '400': '#3B82F6',
+          '500': '#0F52BA',
+          '600': '#0E47A1',
+          '700': '#1E3A8A',
         },
 
         /* Semantic Colors */
-        'success': '#10B981',
-        'warning': '#F59E0B',
-        'danger': '#EF4444',
-        'info': '#3B82F6',
+        'success': '#16A34A',
+        'warning': '#D97706',
+        'danger': '#DC2626',
+        'info': '#2563EB',
 
         /* Risk Score Colors */
         'risk': {
-          'low': '#10B981',
-          'moderate': '#F59E0B',
-          'high': '#EF4444',
+          'low': '#16A34A',
+          'moderate': '#D97706',
+          'high': '#DC2626',
         },
 
         /* Neutrals — Light Mode */
         'bg': {
           'primary': '#FFFFFF',
-          'secondary': '#F9FAFB',
-          'tertiary': '#F3F4F6',
+          'secondary': '#F8FAFC',
+          'tertiary': '#F1F5F9',
         },
         'border': {
-          'DEFAULT': '#E5E7EB',
-          'strong': '#D1D5DB',
+          'DEFAULT': '#E2E8F0',
+          'strong': '#CBD5E1',
         },
         'text': {
-          'primary': '#111827',
-          'secondary': '#6B7280',
-          'muted': '#9CA3AF',
+          'primary': '#0F172A',
+          'secondary': '#475569',
+          'muted': '#94A3B8',
         },
 
         /* Dark Mode Neutrals */
         'dark': {
-          'bg': '#0F1117',
-          'bg-secondary': '#1A1D27',
-          'bg-tertiary': '#22263A',
-          'border': '#2D3147',
-          'border-strong': '#3D4266',
-          'text': '#F9FAFB',
-          'text-secondary': '#9CA3AF',
-          'text-muted': '#6B7280',
+          'bg': '#0B0F19',
+          'bg-secondary': '#151B26',
+          'bg-tertiary': '#1E2638',
+          'border': '#262F45',
+          'border-strong': '#384563',
+          'text': '#F8FAFC',
+          'text-secondary': '#94A3B8',
+          'text-muted': '#64748B',
         },
       },
 
@@ -119,10 +119,10 @@ const config: Config = {
         },
         'pulse-glow': {
           '0%, 100%': {
-            boxShadow: '0 0 15px rgba(99, 102, 241, 0.15), 0 0 30px rgba(6, 182, 212, 0.08)',
+            boxShadow: '0 0 15px rgba(15, 82, 186, 0.15), 0 0 30px rgba(15, 82, 186, 0.08)',
           },
           '50%': {
-            boxShadow: '0 0 25px rgba(99, 102, 241, 0.25), 0 0 50px rgba(6, 182, 212, 0.15)',
+            boxShadow: '0 0 25px rgba(15, 82, 186, 0.25), 0 0 50px rgba(15, 82, 186, 0.15)',
           },
         },
         'score-fill': {

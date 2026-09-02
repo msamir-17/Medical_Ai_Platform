@@ -29,56 +29,73 @@ export function UploadZone() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto mt-10">
+    <div className="w-full max-w-3xl mx-auto px-4 sm:px-6">
       <div className={`
-        relative border-2 border-dashed rounded-2xl p-12 text-center transition-all
-        ${status === 'uploading' ? 'border-[--color-primary-500] bg-[--color-primary-50]' : 'border-[--color-border] bg-[--color-bg-secondary]'}
+        relative border-2 border-dashed rounded-3xl transition-all duration-300
+        ${status === 'uploading' 
+          ? 'border-indigo-400 bg-indigo-50/50 shadow-lg shadow-indigo-100' 
+          : 'border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50'
+        }
+        ${status === 'idle' ? 'cursor-pointer' : ''}
+        p-6 sm:p-8 md:p-12 text-center
       `}>
-        {/* 
-          FIX 1: Added disabled state for success.
-          FIX 2: Changed class pointer-events dynamically. When 'success', pointer-events-none ensures clicks pass straight through to buttons below.
-        */}
         <input 
           type="file" 
-          className={`absolute inset-0 w-full h-full opacity-0 z-50 ${status !== 'idle' ? 'hidden' : 'cursor-pointer'}
-          `}
+          className={`absolute inset-0 w-full h-full opacity-0 z-50 ${status !== 'idle' ? 'hidden' : 'cursor-pointer'}`}
           onChange={handleFileUpload}
           accept=".pdf,.png,.jpg,.jpeg"
           disabled={status !== 'idle'}
         />
 
-        <div className="flex flex-col items-center gap-6">
+        <div className="flex flex-col items-center gap-4 sm:gap-6">
           {status === 'idle' && (
             <>
-              <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center shadow-inner">
-                <Upload size={32} />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-indigo-50 text-indigo-600 flex items-center justify-center shadow-md border border-indigo-100/50">
+                <Upload size={32} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
               </div>
-              <div>
-                <p className="text-xl font-bold text-slate-900">Drop your medical report</p>
-                <p className="text-sm text-slate-500 mt-1 font-medium">Support for PDF, PNG, or JPG (Max 10MB)</p>
+              <div className="space-y-2">
+                <p className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
+                  Drop your medical report
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                  PDF, PNG, or JPG • Up to 10MB
+                </p>
               </div>
             </>
           )}
 
           {status === 'uploading' && (
             <>
-              <Loader2 className="animate-spin text-indigo-600" size={48} />
-              <div>
-                <p className="text-lg font-bold text-slate-900">AI is reading your report...</p>
-                <p className="text-sm text-slate-500 mt-1 font-medium italic">Extracting lab values and medical entities</p>
+              <div className="relative">
+                <div className="absolute inset-0 bg-indigo-200/20 rounded-full animate-pulse" />
+                <Loader2 className="animate-spin text-indigo-600 relative z-10" size={48} strokeWidth={1.5} />
+              </div>
+              <div className="space-y-2 animate-in fade-in duration-300">
+                <p className="text-base sm:text-lg md:text-xl font-bold text-slate-900 tracking-tight">
+                  AI is reading your report
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                  Extracting lab values and medical entities...
+                </p>
               </div>
             </>
           )}
 
           {status === 'success' && (
-            <div className="flex flex-col items-center animate-in zoom-in duration-300 relative z-20">
-              <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-4">
-                <CheckCircle2 size={32} />
+            <div className="flex flex-col items-center space-y-4 sm:space-y-6 animate-in fade-in zoom-in duration-400 relative z-20">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-green-100 to-emerald-50 text-green-600 flex items-center justify-center shadow-md border border-green-100/50">
+                <CheckCircle2 size={40} strokeWidth={1.5} />
               </div>
-              <p className="text-xl font-bold text-slate-900 mb-8">Analysis Complete!</p>
+              <div className="space-y-1 text-center">
+                <p className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
+                  Analysis Complete!
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                  {fileName && `${fileName} • Ready to review`}
+                </p>
+              </div>
               
-              {/* Buttons Container */}
-              <div className="flex flex-row items-center gap-4 justify-center w-full relative z-30">
+              <div className="flex flex-col sm:flex-row items-center gap-3 justify-center w-full relative z-30 pt-2">
                 <button 
                   type="button"
                   onClick={(e) => { 
@@ -86,12 +103,11 @@ export function UploadZone() {
                     setStatus('idle'); 
                     setUploadedId(null); 
                   }}
-                  className="h-11 px-6 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all border border-slate-200 pointer-events-auto"
+                  className="w-full sm:w-auto h-12 px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-all duration-200 border border-slate-200 hover:border-slate-300 pointer-events-auto active:scale-95"
                 >
                   Upload Another
                 </button>
                 
-                {/* FIX 3: Uncommented routing logic, forced higher z-index & explicit opacity styling */}
                 <button 
                   type="button"
                   onClick={(e) => {
@@ -100,10 +116,10 @@ export function UploadZone() {
                       router.push(`/reports/${uploadedId}`);
                     }
                   }}
-                  className="h-11 px-6 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] pointer-events-auto relative z-30"
+                  className="w-full sm:w-auto h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 flex items-center justify-center gap-2 whitespace-nowrap pointer-events-auto relative z-30 transition-all duration-200 active:scale-95"
                 >
-                  <span className="text-white opacity-100">View Report</span>
-                  <ArrowRight size={16} className="text-white" />
+                  <span>View Report</span>
+                  <ArrowRight size={16} />
                 </button>
               </div>
             </div>

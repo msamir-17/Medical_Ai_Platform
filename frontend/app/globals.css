@@ -1,46 +1,49 @@
 @import "tailwindcss";
 
+/* ─── Google Fonts Import ─── */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
 /* ─── Full Design System — UI_GUIDELINES.md ─── */
 @theme {
-  /* Primary Brand Palette */
-  --color-primary-50:  #EEF2FF;
-  --color-primary-100: #E0E7FF;
-  --color-primary-200: #C7D2FE;
-  --color-primary-400: #818CF8;
-  --color-primary-500: #6366F1;
-  --color-primary-600: #4F46E5;
-  --color-primary-700: #4338CA;
+  /* Primary Brand Palette — Clinical Teal-Blue */
+  --color-primary-50:  #EFF6FF;
+  --color-primary-100: #DBEAFE;
+  --color-primary-200: #BFDBFE;
+  --color-primary-400: #3B82F6;
+  --color-primary-500: #0F52BA;
+  --color-primary-600: #0E47A1;
+  --color-primary-700: #1E3A8A;
 
   /* Semantic Colors */
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger:  #EF4444;
-  --color-info:    #3B82F6;
+  --color-success: #16A34A;
+  --color-warning: #D97706;
+  --color-danger:  #DC2626;
+  --color-info:    #2563EB;
 
   /* Risk Score Colors */
-  --color-risk-low:      #10B981;
-  --color-risk-moderate: #F59E0B;
-  --color-risk-high:     #EF4444;
+  --color-risk-low:      #16A34A;
+  --color-risk-moderate: #D97706;
+  --color-risk-high:     #DC2626;
 
   /* Neutrals — Light Mode defaults */
   --color-bg-primary:    #FFFFFF;
-  --color-bg-secondary:  #F9FAFB;
-  --color-bg-tertiary:   #F3F4F6;
-  --color-border:        #E5E7EB;
-  --color-border-strong: #D1D5DB;
-  --color-text-primary:  #111827;
-  --color-text-secondary:#6B7280;
-  --color-text-muted:    #9CA3AF;
+  --color-bg-secondary:  #F8FAFC;
+  --color-bg-tertiary:   #F1F5F9;
+  --color-border:        #E2E8F0;
+  --color-border-strong: #CBD5E1;
+  --color-text-primary:  #0F172A;
+  --color-text-secondary:#475569;
+  --color-text-muted:    #94A3B8;
 
   /* Dark Mode Neutrals (referenced via data-theme) */
-  --color-dark-bg:          #0F1117;
-  --color-dark-bg-secondary:#1A1D27;
-  --color-dark-bg-tertiary: #22263A;
-  --color-dark-border:      #2D3147;
-  --color-dark-border-strong:#3D4266;
-  --color-dark-text:        #F9FAFB;
-  --color-dark-text-secondary:#9CA3AF;
-  --color-dark-text-muted:  #6B7280;
+  --color-dark-bg:          #0B0F19;
+  --color-dark-bg-secondary:#151B26;
+  --color-dark-bg-tertiary: #1E2638;
+  --color-dark-border:      #262F45;
+  --color-dark-border-strong:#384563;
+  --color-dark-text:        #F8FAFC;
+  --color-dark-text-secondary:#94A3B8;
+  --color-dark-text-muted:  #64748B;
 
   /* Spacing Scale (base 4px) */
   --space-1:  4px;
@@ -72,10 +75,20 @@
   100% { background-position: 200% 0;  }
 }
 
+@keyframes dropdown-in {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
 /* ─── Base Styles ─── */
 @layer base {
   body {
-    background-color: var(--color-bg-primary);
+    background-color: var(--color-bg-secondary);
     color: var(--color-text-primary);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -119,5 +132,33 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 6px;
+  }
+
+  .animate-dropdown-in {
+    animation: dropdown-in 0.18s ease-out forwards;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.2s ease-out forwards;
+  }
+
+  /* Heading font utility */
+  .font-heading {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  }
+
+  /* Custom scrollbar for dropdowns */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 5px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
   }
 }
