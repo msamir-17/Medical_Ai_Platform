@@ -12,6 +12,17 @@ const iconColors = [
   { bg: 'bg-violet-100',  text: 'text-violet-600'  },
 ];
 
+function formatTimeAgo(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'Just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  return date.toLocaleDateString();
+}
+
 export function RecentReports({ reports }: { reports: any[] }) {
   if (!reports || reports.length === 0) return null;
 
@@ -49,9 +60,20 @@ export function RecentReports({ reports }: { reports: any[] }) {
                   <FileText size={20} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-900 truncate max-w-[180px] sm:max-w-xs md:max-w-sm lg:max-w-md">
+                  <p className="text-sm font-bold text-slate-900 truncate max-w-45 sm:max-w-xs md:max-w-sm lg:max-w-md">
                     {report.filename}
                   </p>
+
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">
+                      {report.report_type || 'General Analysis'}
+                    </p>
+                    <span className="text-[10px] text-slate-300">•</span>
+                    <p className="text-[10px] text-indigo-400 font-bold uppercase">
+                      {formatTimeAgo(report.created_at)}
+                    </p>
+                  </div>
+
                   <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">
                     {report.report_type || 'General Analysis'}
                   </p>

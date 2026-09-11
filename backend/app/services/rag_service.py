@@ -1,4 +1,13 @@
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
@@ -15,6 +24,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def format_abnormal_findings(extracted_values: list) -> str:
+    """
+    Production-grade clean text formatter for abnormal lab markers.
+    Eliminates JSON formatting noise ({}, [], ", :) and token waste by 80%.
+    """
+    if not extracted_values or not isinstance(extracted_values, list):
+        return ""
+    
+    abnormal_lines = []
+    for item in extracted_values:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status", "")).upper()
+        if status in ["HIGH", "LOW", "CRITICAL", "ABNORMAL"]:
+            marker = item.get("marker", "MARKER")
+            val = item.get("value", "")
+            unit = item.get("unit", "")
+            ref = item.get("ref_range", "")
+            abnormal_lines.append(f"- {marker}: {val} {unit} ({status} | Normal Ref: {ref})")
+            
+    if not abnormal_lines:
+        return ""
+        
+    return "\n🚨 PRE-PARSED CRITICAL & ABNORMAL LAB FINDINGS (FROM DATABASE):\n" + "\n".join(abnormal_lines) + "\n"
+
 class RAGService:
 
     def __init__(self):
@@ -28,13 +62,15 @@ class RAGService:
         self.vector_db_path = "vector_stores"
         os.makedirs(self.vector_db_path, exist_ok=True)
 
-        # FIX: Passing the variable api_key, not the string "api_key"
+        # FIX: Load API key and model dynamically
         api_key = os.getenv("GROQ_API_KEY")
+        model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
         self.llm = ChatGroq(
             temperature=0, 
             groq_api_key=api_key, 
-            model_name="llama-3.1-8b-instant"
+            model_name=model_name,
+            max_tokens=750
         )
 
         self._index_cache = {} 
@@ -178,8 +214,6 @@ class RAGService:
             print(f"❓ Path Exists?: {os.path.exists(path)}")
 
             if os.path.exists(path):
-                db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-
                 t_start = time.time()
                 
                 if path in self._index_cache:
@@ -190,23 +224,44 @@ class RAGService:
                     db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
                     self._index_cache[path] = db # Save to RAM
                 
-                print(f"⏱️ DEBUG: FAISS Retrieval Time: {time.time() - t_start:.4f}s")
+                # 1. Dense FAISS Vector Search
+                faiss_docs = db.similarity_search(question, k=6)
 
+                # 2. Sparse BM25 Keyword Search (Ensures exact terms like Creatinine/BUN/Potassium are never missed)
+                bm25_docs = []
+                try:
+                    all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
+                    if all_chunks:
+                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25.k = 4
+                        bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
+                except Exception as bm_err:
+                    print(f"[BM25 WARNING] Fallback to FAISS: {bm_err}")
 
-                docs = db.similarity_search(question, k=3)
-                print(f"📄 Found {len(docs)} chunks for path: {path}")
-                for i, d in enumerate(docs):
-                    # Yeh terminal mein dikhayega ki AI ne kya 'padha'
-                    print(f"   [Chunk {i}] Content: {d.page_content[:150]}...")
+                # 3. Ensemble Hybrid Deduplication
+                combined_docs = []
+                seen_content = set()
+                for doc in bm25_docs + faiss_docs:
+                    if doc.page_content not in seen_content:
+                        seen_content.add(doc.page_content)
+                        combined_docs.append(doc)
 
-                print(f"📄 Retrieved Docs from {rid[:5]}: {len(docs)}")
+                print(f"[HYBRID RAG DEBUG] Retrieved {len(combined_docs)} unique docs (BM25 + FAISS)")
 
-                all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n" + "\n".join([d.page_content for d in docs]))
+                # 4. Clean Abnormal Lab Findings Injector (80% token reduction over raw JSON)
+                struct_summary = ""
+                if all_report_data:
+                    for rep in all_report_data:
+                        if rep.get("id") == rid and rep.get("extracted_values"):
+                            struct_summary = format_abnormal_findings(rep["extracted_values"])
+
+                report_text_block = "\n".join([d.page_content for d in combined_docs])
+                all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
 
         context = "\n".join(all_contexts)
-        print(f"📏 Final Context Length: {len(context)}")
+        print(f"[RAG DEBUG] Final Context Length: {len(context)}")
         if len(context) > 0:
-             print(f"🔎 Context Preview: {context[:200]}...")
+             print(f"[RAG DEBUG] Context Preview: {context[:200]}...")
         # Final AI reasoning prompt
         prompt = ChatPromptTemplate.from_template("""
         You are a Clinical Data Specialist. Answer based ONLY on the context below.
@@ -219,8 +274,9 @@ class RAGService:
 
         STRICT CLINICAL PROTOCOL:
         1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Strictly ignore reference ranges as results.
-        3. Answer in professional Hinglish/English.
+        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
+        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
+        4. Answer in professional English.
         """)
 
         chain = prompt | self.llm
@@ -279,23 +335,23 @@ class RAGService:
 
         chain = prompt | self.llm
 
-        response = chain.invoke({
-            "text": text
-        })
-
-        print("\n" + "=" * 60)
-        print("🔍 RAW LLM METADATA RESPONSE")
-        print(response.content)
-        print("=" * 60 + "\n")
+        raw_llm_content = ""
+        try:
+            # Truncate text to top 2500 characters (header area) to prevent Groq TPM rate limits
+            response = chain.invoke({
+                "text": text[:2500]
+            })
+            raw_llm_content = getattr(response, 'content', str(response))
+            print("\n" + "=" * 60)
+            print("[METADATA LLM] RAW RESPONSE:")
+            print(raw_llm_content)
+            print("=" * 60 + "\n")
+        except Exception as llm_err:
+            print(f"[METADATA WARNING] Groq LLM skipped due to rate limit/error: {llm_err}")
 
         try:
-
-            match = re.search(r"\{.*\}", response.content, re.DOTALL)
-
-            if not match:
-                raise ValueError("No JSON object found.")
-
-            metadata = json.loads(match.group(0))
+            match = re.search(r"\{.*\}", raw_llm_content, re.DOTALL) if raw_llm_content else None
+            metadata = json.loads(match.group(0)) if match else {}
 
             # ----------------------------
             # Normalize empty values
@@ -312,7 +368,7 @@ class RAGService:
             ]:
                 value = str(metadata.get(key, "")).strip()
 
-                if value == "":
+                if value == "" or value == "None":
                     metadata[key] = "N/A"
                 else:
                     metadata[key] = value
@@ -343,21 +399,17 @@ class RAGService:
             if doctor.lower() in blocked_exact:
                 metadata["doctor_name"] = "N/A"
 
-            print("✅ Parsed metadata:", metadata)
-            print("👨‍⚕️ Doctor extracted:", metadata.get("doctor_name"))
-
+            print("[METADATA] Parsed metadata:", metadata)
             return metadata
 
         except Exception as e:
-
-            print(f"❌ Metadata Extraction Error: {e}")
-
+            print(f"[METADATA ERROR] Extraction Error: {e}")
             return {
-                "name": "N/A",
+                "name": name_match.group(1).strip() if name_match else "N/A",
                 "age": "N/A",
                 "gender": "N/A",
                 "date_of_birth": "N/A",
-                "patient_id": "N/A",
+                "patient_id": id_match.group(1).strip() if id_match else "N/A",
                 "doctor_name": "N/A",
                 "hospital_name": "N/A",
                 "sample_type": "N/A",

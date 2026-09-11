@@ -41,6 +41,7 @@ langchain-groq
 langchain-text-splitters
 faiss-cpu
 sentence-transformers
+rank_bm25
 
 # --- Communication ---
 resend

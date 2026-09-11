@@ -1,8 +1,5 @@
 @import "tailwindcss";
 
-/* ─── Google Fonts Import ─── */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
-
 /* ─── Full Design System — UI_GUIDELINES.md ─── */
 @theme {
   /* Primary Brand Palette — Clinical Teal-Blue */

@@ -9,8 +9,14 @@ load_dotenv()
 # Database URL load karein
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Engine create karein (Communication point)
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Engine create karein (Communication point with automatic reconnect pool)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_size=10,
+    max_overflow=20
+)
 
 # Connection session banayein
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -11,7 +11,7 @@ def load_model_from_hub(filename: str):
     """
     token = os.getenv("HF_TOKEN")
     
-    print(f"📦 Fetching {filename} from {MODEL_REPO}...")
+    print(f"[Model Loader] Fetching {filename} from {MODEL_REPO}...")
     
     model_path = hf_hub_download(
         repo_id=MODEL_REPO,

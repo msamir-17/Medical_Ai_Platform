@@ -128,9 +128,9 @@ class OCRService:
         text = " ".join(text_parts)
         return self._normalize_text(text)
 
-    # -----------------------------------------
-    # TEXT NORMALIZATION
-    # -----------------------------------------
+    # --------------------------------------- --
+    # TEXT NORMALIZATION                     
+    # --------------------------------------- --
     def _normalize_text(self, text):
 
         # Remove extra spaces

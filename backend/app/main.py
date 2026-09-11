@@ -1,3 +1,12 @@
+import sys
+
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
@@ -26,11 +35,12 @@ app = FastAPI(
 # This allows your Next.js frontend (port 3000) to talk to this API (port 8000)
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=[
-    #     "http://localhost:3000",
-    #     "http://127.0.0.1:3000"
-    #     ],
-    allow_origins=["*"],  # For development, allow all origins. Change in production!
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

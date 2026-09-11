@@ -1,10 +1,10 @@
-version: '3.8'
+# version: '3.8'
 
 services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "8000:7860"
     env_file:
       - .env
     volumes:
