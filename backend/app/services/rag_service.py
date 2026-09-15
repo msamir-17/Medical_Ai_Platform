@@ -19,10 +19,20 @@ from langchain_core.output_parsers import JsonOutputParser
 from rapidfuzz import process
 import json
 from langchain_core.prompts import ChatPromptTemplate
+from datetime import datetime
 import re
 from dotenv import load_dotenv
 
 load_dotenv()
+
+def filter_by_l2_threshold(retrieved_results_with_scores, threshold: float = 1.3, query: str = ""):
+    filtered_docs = [doc for doc, score in retrieved_results_with_scores if score <= threshold]
+    
+    keywords = ["trend", "history", "change"]
+    if any(k in query.lower() for k in keywords):
+        filtered_docs.sort(key=lambda doc: doc.metadata.get("report_date", "1970-01-01"))
+        
+    return filtered_docs
 
 def format_abnormal_findings(extracted_values: list) -> str:
     """
@@ -76,11 +86,31 @@ class RAGService:
         self._index_cache = {} 
 
 
-    def index_report(self, text: str, user_id: str, report_id: str):
+    def index_report(self, text: str, user_id: str, report_id: str, extracted_metadata: dict = None):
+        if extracted_metadata is None:
+            extracted_metadata = {}
+
+        date_str = str(extracted_metadata.get("date", "") or extracted_metadata.get("report_date", "") or extracted_metadata.get("date_of_birth", "")).strip()
+        report_date = "1970-01-01"
+
+        if date_str and date_str != "N/A":
+            date_formats = [
+                "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
+                "%m-%d-%Y", "%d %b %Y", "%d %B %Y", "%Y/%m/%d"
+            ]
+            for fmt in date_formats:
+                try:
+                    report_date = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+        extracted_metadata["report_date"] = report_date
+
         chunks = self.text_splitter.split_text(text)
 
         # --- THE FIX: ADD METADATA TO EVERY CHUNK ---
-        metadatas = [{"report_id": report_id, "user_id": user_id} for _ in chunks]
+        metadatas = [{"report_id": report_id, "user_id": user_id, "report_date": report_date} for _ in chunks]
         
         # 1. Save Specific Report Index (Existing Logic)
         report_path = os.path.join(self.vector_db_path, f"user_{user_id}", f"report_{report_id}")
@@ -224,8 +254,9 @@ class RAGService:
                     db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
                     self._index_cache[path] = db # Save to RAM
                 
-                # 1. Dense FAISS Vector Search
-                faiss_docs = db.similarity_search(question, k=6)
+                # 1. Dense FAISS Vector Search with L2 Threshold Gate
+                faiss_results = db.similarity_search_with_score(question, k=6)
+                faiss_docs = filter_by_l2_threshold(faiss_results, threshold=1.3, query=question)
 
                 # 2. Sparse BM25 Keyword Search (Ensures exact terms like Creatinine/BUN/Potassium are never missed)
                 bm25_docs = []
@@ -279,11 +310,26 @@ class RAGService:
         4. Answer in professional English.
         """)
 
-        chain = prompt | self.llm
-        response = chain.invoke({"context": context, "question": question})
-        
+        try:
+            chain = prompt | self.llm
+            response = chain.invoke({"context": context, "question": question})
+            answer_text = response.content
+        except Exception as groq_err:
+            print(f"[RAG ERROR] Groq API timeout/failure: {groq_err}")
+            fallback_findings = []
+            if all_report_data:
+                for rep in all_report_data:
+                    if rep.get("extracted_values"):
+                        formatted = format_abnormal_findings(rep["extracted_values"])
+                        if formatted:
+                            fallback_findings.append(formatted)
+            if fallback_findings:
+                answer_text = "⚠️ **[Groq API Offline Fallback] Direct Database Findings:**\n" + "\n".join(fallback_findings)
+            else:
+                answer_text = "⚠️ AI reasoning service is currently unavailable. Please try again shortly."
+
         return {
-            "answer": response.content, 
+            "answer": answer_text, 
             "sources": f"Analyzed {len(report_ids)} active documents"
         }
 

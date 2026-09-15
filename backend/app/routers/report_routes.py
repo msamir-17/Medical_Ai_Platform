@@ -56,7 +56,7 @@ async def upload_report(
     print(f"🧠 Metadata LLM: {metadata_time:.2f}s")
 
     t2 = time.time()
-    rag_service.index_report(raw_text, user_id=current_user_id, report_id=file_id)
+    rag_service.index_report(raw_text, user_id=current_user_id, report_id=file_id, extracted_metadata=patient_metadata)
     faiss_time = time.time() - t2
     print(f"💾 FAISS Indexing: {faiss_time:.2f}s")
     
@@ -144,7 +144,7 @@ async def upload_report(
         # Right before rag_service.index_report:
         print(f"📁 UPLOAD DEBUG: Saving report to folder of user: {current_user_id}")
         # Chatbot memory mein dalna
-        rag_service.index_report(raw_text, user_id=current_user_id,report_id=file_id) 
+        rag_service.index_report(raw_text, user_id=current_user_id, report_id=file_id, extracted_metadata=patient_metadata) 
 
         # 4. DATABASE MEIN SAVE KARNA (The Professional Way)
         new_report = Report(
