@@ -80,14 +80,13 @@ async def ask_question_stream(
     # 2. SSE Generator with Disconnection Safety
     async def sse_event_generator():
         try:
-            stream_gen = rag_service.query_report_stream(
+            async for chunk in rag_service.aquery_report_stream(
                 question=chat_request.question,
                 user_id=current_user_id,
                 mode=chat_request.mode,
                 report_ids=target_ids,
                 all_report_data=all_report_data
-            )
-            for chunk in stream_gen:
+            ):
                 if await raw_request.is_disconnected():
                     print(f"[STREAM DISCONNECT] Client disconnected for user {current_user_id}.")
                     break

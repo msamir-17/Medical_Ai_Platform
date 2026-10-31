@@ -1,3 +1,4 @@
+import asyncio
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -616,5 +617,222 @@ class RAGService:
                 "hospital_name": "N/A",
                 "sample_type": "N/A",
             }
+
+    # =========================================================================
+    
+    # =========================================================================
+    # PHASE 3: ASYNC & PARALLEL RETRIEVAL ENGINE
+    # =========================================================================
+
+    async def _retrieve_single_report_async(self, rid: str, user_folder: str, question: str, all_report_data: list, semaphore: asyncio.Semaphore) -> str:
+        """
+        Isolated worker for retrieving context from a single report index concurrently.
+        Bounded by semaphore to prevent resource exhaustion and guarded against exceptions.
+        """
+        async with semaphore:
+            path = os.path.join(user_folder, f"report_{rid}")
+            if not os.path.exists(path):
+                return ""
+
+            def _sync_index_search():
+                # Load or reuse FAISS index
+                if path in self._index_cache:
+                    db = self._index_cache[path]
+                else:
+                    db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+                    self._index_cache[path] = db
+
+                # 1. Dense search with score
+                faiss_results = db.similarity_search_with_score(question, k=6)
+                faiss_docs = filter_by_l2_threshold(faiss_results, threshold=1.3, query=question)
+
+                # 2. Sparse BM25 search
+                bm25_docs = []
+                try:
+                    all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
+                    if all_chunks:
+                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25.k = 4
+                        bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
+                except Exception as bm_err:
+                    print(f"[BM25 ASYNC WARNING] {bm_err}")
+
+                # 3. Deduplicate
+                combined_docs = []
+                seen_content = set()
+                for doc in bm25_docs + faiss_docs:
+                    if doc.page_content not in seen_content:
+                        seen_content.add(doc.page_content)
+                        combined_docs.append(doc)
+
+                # 4. Format findings
+                struct_summary = ""
+                if all_report_data:
+                    for rep in all_report_data:
+                        if rep.get("id") == rid and rep.get("extracted_values"):
+                            struct_summary = format_abnormal_findings(rep["extracted_values"])
+
+                report_text_block = "\n".join([d.page_content for d in combined_docs])
+                return f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block
+
+            # Offload CPU-bound FAISS & BM25 search to thread pool to avoid blocking the event loop
+            try:
+                return await asyncio.to_thread(_sync_index_search)
+            except Exception as e:
+                print(f"[ASYNC RETRIEVAL ERROR] Report {rid}: {e}")
+                return ""
+
+    async def _parallel_retrieve_contexts(self, report_ids: list, user_folder: str, question: str, all_report_data: list, max_concurrency: int = 5) -> str:
+        """
+        Executes parallel retrieval across all requested report indices using asyncio.gather.
+        Guarantees original document order preservation and bounded concurrency.
+        """
+        if not report_ids:
+            return ""
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [
+            self._retrieve_single_report_async(rid, user_folder, question, all_report_data, semaphore)
+            for rid in report_ids
+        ]
+
+        try:
+            results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=10.0)
+        except asyncio.TimeoutError:
+            print("[ASYNC TIMEOUT] Parallel retrieval exceeded 10.0s, returning partial results.")
+            results = []
+
+        valid_contexts = []
+        for r in results:
+            if isinstance(r, str) and r.strip():
+                valid_contexts.append(r)
+            elif isinstance(r, Exception):
+                print(f"[PARALLEL TASK ERROR] {r}")
+
+        return "\n".join(valid_contexts)
+
+    async def aquery_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
+        """
+        Phase 3 Async Non-Blocking RAG Query Method.
+        Utilizes parallel multi-report retrieval and non-blocking LLM invocation.
+        """
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+
+        if mode == "overview":
+            return await asyncio.to_thread(self.query_report, question, user_id, mode, report_ids, all_report_data)
+
+        if mode == "compare" and all_report_data:
+            score, gaps = self.verify_patient_identity([r['patient_info'] for r in all_report_data])
+            if score < 85:
+                return {
+                    "answer": f"### 🚨 Safety Block\nIdentity Mismatch detected ({score}% confidence). Gaps: {', '.join(gaps)}. Cross-report analysis is disabled for safety.",
+                    "sources": "Safety Engine"
+                }
+
+        report_ids = report_ids or []
+        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        sources_str = f"Analyzed {len(report_ids)} active documents"
+
+        prompt = ChatPromptTemplate.from_template("""
+        You are a Clinical Data Specialist. Answer based ONLY on the context below.
+        
+        CONTEXT:
+        {context}
+        
+        QUESTION:
+        {question}
+
+        STRICT CLINICAL PROTOCOL:
+        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
+        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
+        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
+        4. Answer in professional English.
+        """)
+
+        try:
+            chain = prompt | self.llm
+            response = await chain.ainvoke({"context": context, "question": question})
+            answer_text = response.content
+        except Exception as groq_err:
+            fallback_findings = []
+            if all_report_data:
+                for rep in all_report_data:
+                    if rep.get("extracted_values"):
+                        formatted = format_abnormal_findings(rep["extracted_values"])
+                        if formatted:
+                            fallback_findings.append(formatted)
+            answer_text = "⚠️ **[Groq API Offline Fallback] Direct Database Findings:**\n" + "\n".join(fallback_findings) if fallback_findings else "⚠️ AI service unavailable."
+
+        return {"answer": answer_text, "sources": sources_str}
+
+    async def aquery_report_stream(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
+        """
+        Phase 3 Async Streaming Generator with Parallel Retrieval.
+        Yields tokens asynchronously while running non-blocking retrieval.
+        """
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+
+        if mode == "overview":
+            for chunk in self.query_report_stream(question, user_id, mode, report_ids, all_report_data):
+                yield chunk
+            return
+
+        if mode == "compare" and all_report_data:
+            score, gaps = self.verify_patient_identity([r['patient_info'] for r in all_report_data])
+            if score < 85:
+                safety_block = f"### 🚨 Safety Block\nIdentity Mismatch detected ({score}% confidence). Gaps: {', '.join(gaps)}. Cross-report analysis is disabled for safety."
+                yield {"type": "metadata", "sources": "Safety Engine", "mode": mode}
+                yield {"type": "token", "content": safety_block}
+                yield {"type": "done", "sources": "Safety Engine"}
+                return
+
+        report_ids = report_ids or []
+        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        sources_str = f"Analyzed {len(report_ids)} active documents"
+
+        yield {
+            "type": "metadata",
+            "sources": sources_str,
+            "mode": mode,
+            "context_length": len(context)
+        }
+
+        prompt = ChatPromptTemplate.from_template("""
+        You are a Clinical Data Specialist. Answer based ONLY on the context below.
+        
+        CONTEXT:
+        {context}
+        
+        QUESTION:
+        {question}
+
+        STRICT CLINICAL PROTOCOL:
+        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
+        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
+        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
+        4. Answer in professional English.
+        """)
+
+        try:
+            chain = prompt | self.llm
+            async for chunk in chain.astream({"context": context, "question": question}):
+                token = getattr(chunk, 'content', str(chunk))
+                if token:
+                    yield {"type": "token", "content": token}
+            yield {"type": "done", "sources": sources_str}
+        except GeneratorExit:
+            return
+        except Exception as groq_err:
+            fallback_findings = []
+            if all_report_data:
+                for rep in all_report_data:
+                    if rep.get("extracted_values"):
+                        formatted = format_abnormal_findings(rep["extracted_values"])
+                        if formatted:
+                            fallback_findings.append(formatted)
+            msg = "⚠️ **[Groq API Offline Fallback] Direct Database Findings:**\n" + "\n".join(fallback_findings) if fallback_findings else "⚠️ AI service unavailable."
+            yield {"type": "token", "content": msg}
+            yield {"type": "error", "message": str(groq_err), "sources": sources_str}
+
 # Singleton instance
 rag_service = RAGService()
