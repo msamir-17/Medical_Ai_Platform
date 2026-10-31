@@ -178,7 +178,7 @@ class RAGService:
     def query_report(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
         
         print(f"\n🚀 [DEPLOYED VERSION: 2026-06-15-V1]")
-        print(f"👤 USER: {user_id} | MODE: {mode} | IDs: {report_ids}")
+        # stream params
 
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
         
@@ -339,8 +339,8 @@ class RAGService:
         Yields structured tokens, metadata, and status events without buffering.
         Preserves complete clinical safety checks and context construction.
         """
-        print(f"\n🚀 [DEPLOYED STREAMING VERSION: 2026-06-15-V1]")
-        print(f"👤 USER: {user_id} | MODE: {mode} | IDs: {report_ids}")
+        # stream start
+        # stream params
 
         user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
 
