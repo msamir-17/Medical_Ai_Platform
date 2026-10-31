@@ -1,21 +1,21 @@
 import os
 import time
-import asyncio
+import threading
 import numpy as np
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 
 class SemanticCacheService:
     """
     Production-Conscious In-Memory Semantic Caching Service.
     Guarantees strict patient and report isolation, configurable cosine similarity,
-    TTL expiration, and non-blocking thread-safety.
+    TTL expiration, and non-blocking thread-safety across sync and async callers.
     """
 
     def __init__(self):
         # Cache storage structure:
         # { namespace_key: [ { "query_text": str, "embedding": np.ndarray, "response": dict, "timestamp": float } ] }
         self._cache: Dict[str, List[Dict[str, Any]]] = {}
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         
         # Configurable similarity threshold via env var (Default: 0.97 for clinical safety)
         self.threshold = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.97"))
@@ -44,7 +44,7 @@ class SemanticCacheService:
             return 0.0
         return float(np.dot(vec1, vec2) / (norm1 * norm2))
 
-    async def get(
+    def get(
         self,
         query_embedding: List[float],
         user_id: str,
@@ -55,7 +55,7 @@ class SemanticCacheService:
         Performs semantic lookup in the user's isolated namespace.
         Returns cached response if similarity >= threshold, else None.
         """
-        async with self._lock:
+        with self._lock:
             self.total_lookups += 1
             namespace = self._build_namespace(user_id, mode, report_ids)
             
@@ -91,7 +91,7 @@ class SemanticCacheService:
             self.cache_misses += 1
             return None
 
-    async def put(
+    def put(
         self,
         query_text: str,
         query_embedding: List[float],
@@ -106,7 +106,7 @@ class SemanticCacheService:
         if not response or not response.get("answer"):
             return
 
-        async with self._lock:
+        with self._lock:
             namespace = self._build_namespace(user_id, mode, report_ids)
             if namespace not in self._cache:
                 self._cache[namespace] = []
@@ -124,24 +124,34 @@ class SemanticCacheService:
 
     def invalidate_user(self, user_id: str) -> int:
         """Invalidates all cached entries for a specific user upon document update/deletion."""
-        prefix = f"user:{user_id}:"
-        keys_to_delete = [k for k in self._cache.keys() if k.startswith(prefix)]
-        count = sum(len(self._cache[k]) for k in keys_to_delete)
-        for k in keys_to_delete:
-            del self._cache[k]
-        return count
+        with self._lock:
+            prefix = f"user:{user_id}:"
+            keys_to_delete = [k for k in self._cache.keys() if k.startswith(prefix)]
+            count = sum(len(self._cache[k]) for k in keys_to_delete)
+            for k in keys_to_delete:
+                del self._cache[k]
+            return count
+
+    def clear(self) -> None:
+        """Clears entire cache for testing."""
+        with self._lock:
+            self._cache.clear()
+            self.total_lookups = 0
+            self.cache_hits = 0
+            self.cache_misses = 0
 
     def get_metrics(self) -> Dict[str, Any]:
         """Returns real telemetry on cache efficiency."""
-        hit_rate = (self.cache_hits / self.total_lookups * 100) if self.total_lookups > 0 else 0.0
-        return {
-            "total_lookups": self.total_lookups,
-            "cache_hits": self.cache_hits,
-            "cache_misses": self.cache_misses,
-            "hit_rate_pct": round(hit_rate, 2),
-            "similarity_threshold": self.threshold,
-            "ttl_seconds": self.ttl_seconds
-        }
+        with self._lock:
+            hit_rate = (self.cache_hits / self.total_lookups * 100) if self.total_lookups > 0 else 0.0
+            return {
+                "total_lookups": self.total_lookups,
+                "cache_hits": self.cache_hits,
+                "cache_misses": self.cache_misses,
+                "hit_rate_pct": round(hit_rate, 2),
+                "similarity_threshold": self.threshold,
+                "ttl_seconds": self.ttl_seconds
+            }
 
 # Global singleton instance
 semantic_cache = SemanticCacheService()

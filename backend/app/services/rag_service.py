@@ -1,3 +1,4 @@
+from app.services.semantic_cache_service import semantic_cache
 import asyncio
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -237,6 +238,12 @@ class RAGService:
                     "sources": "Safety Engine"
                 }
 
+        # 1. Semantic Cache Check (Sub-millisecond lookup, 0 Groq calls on hit)
+        query_emb = self.embeddings.embed_query(question)
+        cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
+        if cached_resp:
+            return cached_resp
+
         # Context build karein sirf Database ki active IDs ke liye
         for rid in report_ids:
             path = os.path.join(user_folder, f"report_{rid}")
@@ -315,6 +322,8 @@ class RAGService:
             chain = prompt | self.llm
             response = chain.invoke({"context": context, "question": question})
             answer_text = response.content
+            # Store validated successful response in Semantic Cache
+            semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": f"Analyzed {len(report_ids)} active documents"}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
             print(f"[RAG ERROR] Groq API timeout/failure: {groq_err}")
             fallback_findings = []
@@ -730,6 +739,13 @@ class RAGService:
                 }
 
         report_ids = report_ids or []
+
+        # 1. Semantic Cache Check (Sub-millisecond lookup, 0 Groq calls on hit)
+        query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
+        cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
+        if cached_resp:
+            return cached_resp
+
         context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
@@ -753,6 +769,8 @@ class RAGService:
             chain = prompt | self.llm
             response = await chain.ainvoke({"context": context, "question": question})
             answer_text = response.content
+            # Store validated successful response in Semantic Cache
+            semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
             fallback_findings = []
             if all_report_data:
@@ -787,6 +805,25 @@ class RAGService:
                 return
 
         report_ids = report_ids or []
+
+        # 1. Semantic Cache Check for Streaming
+        query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
+        cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
+        if cached_resp:
+            yield {
+                "type": "metadata",
+                "sources": cached_resp.get("sources", "Semantic Cache"),
+                "mode": mode,
+                "cache_hit": True,
+                "similarity_score": cached_resp.get("similarity_score", 1.0)
+            }
+            cached_text = cached_resp.get("answer", "")
+            words = cached_text.split(" ")
+            for i, w in enumerate(words):
+                yield {"type": "token", "content": w + (" " if i < len(words) - 1 else "")}
+            yield {"type": "done", "sources": cached_resp.get("sources", "Semantic Cache"), "cache_hit": True}
+            return
+
         context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
@@ -815,10 +852,17 @@ class RAGService:
 
         try:
             chain = prompt | self.llm
+            accumulated_tokens = []
             async for chunk in chain.astream({"context": context, "question": question}):
                 token = getattr(chunk, 'content', str(chunk))
                 if token:
+                    accumulated_tokens.append(token)
                     yield {"type": "token", "content": token}
+            
+            full_answer = "".join(accumulated_tokens)
+            if full_answer:
+                semantic_cache.put(question, query_emb, {"answer": full_answer, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
+
             yield {"type": "done", "sources": sources_str}
         except GeneratorExit:
             return
