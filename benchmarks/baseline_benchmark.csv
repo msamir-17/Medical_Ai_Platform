@@ -1,0 +1,16 @@
+query_id,iteration,query,embedding_latency_ms,retrieval_latency_ms,llm_ttft_ms,generation_latency_ms,total_e2e_latency_ms,response_length_chars,status
+1,1,What are the abnormal findings in the lab report?,23.9,15.88,44790.89,44790.89,44830.88,2184,SUCCESS
+1,2,What are the abnormal findings in the lab report?,32.6,18.26,45708.88,45708.88,45759.95,2184,SUCCESS
+1,3,What are the abnormal findings in the lab report?,25.8,17.69,44816.9,44816.9,44860.61,2184,SUCCESS
+2,1,What is the patient's glucose level and is it high?,19.44,15.3,43456.9,43456.9,43492.14,197,SUCCESS
+2,2,What is the patient's glucose level and is it high?,15.83,14.9,3394.78,3394.78,3425.75,197,SUCCESS
+2,3,What is the patient's glucose level and is it high?,22.49,14.62,3424.0,3424.0,3461.43,197,SUCCESS
+3,1,Are there any indicators of kidney or electrolyte dysfunction?,33.12,19.43,11761.96,11761.96,11814.72,2636,SUCCESS
+3,2,Are there any indicators of kidney or electrolyte dysfunction?,25.6,15.5,38837.5,38837.5,38878.82,2636,SUCCESS
+3,3,Are there any indicators of kidney or electrolyte dysfunction?,25.94,17.88,44720.9,44720.9,44764.96,2636,SUCCESS
+4,1,What is the serum potassium level and what are the clinical risks?,27.5,17.08,44782.34,44782.34,44827.13,2246,SUCCESS
+4,2,What is the serum potassium level and what are the clinical risks?,26.1,16.74,44750.09,44750.09,44793.14,2246,SUCCESS
+4,3,What is the serum potassium level and what are the clinical risks?,23.37,30.91,44913.45,44913.45,44968.25,2246,SUCCESS
+5,1,Can you summarize the arterial blood gas (ABG) analysis?,24.73,17.28,46030.82,46030.82,46073.07,2129,SUCCESS
+5,2,Can you summarize the arterial blood gas (ABG) analysis?,27.03,15.21,42917.24,42917.24,42959.69,2129,SUCCESS
+5,3,Can you summarize the arterial blood gas (ABG) analysis?,32.09,17.2,43722.97,43722.97,43772.51,2129,SUCCESS

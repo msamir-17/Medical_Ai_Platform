@@ -333,6 +333,162 @@ class RAGService:
             "sources": f"Analyzed {len(report_ids)} active documents"
         }
 
+    def query_report_stream(self, question: str, user_id: str, mode: str = "single", report_ids: list = None, all_report_data: list = None):
+        """
+        Phase 2 Streaming Implementation:
+        Yields structured tokens, metadata, and status events without buffering.
+        Preserves complete clinical safety checks and context construction.
+        """
+        print(f"\n🚀 [DEPLOYED STREAMING VERSION: 2026-06-15-V1]")
+        print(f"👤 USER: {user_id} | MODE: {mode} | IDs: {report_ids}")
+
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+
+        if mode == "overview":
+            inventory = []
+            for r in (all_report_data or []):
+                p = r.get('patient_info', {})
+                r_types = r.get('report_type', [])
+                type_str = ", ".join(r_types) if isinstance(r_types, list) else str(r_types)
+                inventory.append({
+                    "patient": p.get('name', 'N/A'),
+                    "id": p.get('patient_id', 'N/A'),
+                    "contains": type_str,
+                    "doctor": p.get('doctor_name', 'N/A')
+                })
+
+            prompt = ChatPromptTemplate.from_template("""
+            You are a Clinical Data Auditor. List the vault inventory.
+
+            INVENTORY DATA:
+            {inventory}
+
+            STRICT INSTRUCTIONS:
+            1. For each entry, list the Patient Name, ID, and EVERYTHING in the 'contains' field.
+            2. IDENTITY CHECK: Compare the 'patient' names across all entries. 
+            3. If names like 'BASHIR SHAIKH', 'KANTA YADAV', and 'SHAFIQ QURESHI' are all present, you MUST start your response with: 
+               "🚨 **CRITICAL WARNING: MULTIPLE PATIENT IDENTITIES DETECTED**."
+            4. Explain that cross-report analysis is disabled for safety.
+            5. List the reports as an inventory only.
+            """)
+
+            yield {"type": "metadata", "sources": "Clinical Registry", "mode": mode}
+            try:
+                chain = prompt | self.llm
+                for chunk in chain.stream({"inventory": json.dumps(inventory)}):
+                    token = getattr(chunk, 'content', str(chunk))
+                    if token:
+                        yield {"type": "token", "content": token}
+                yield {"type": "done", "sources": "Clinical Registry"}
+            except Exception as e:
+                yield {"type": "error", "message": f"Overview streaming error: {str(e)}"}
+            return
+
+        # 🟡 MODE 2 & 3: COMPARE / SINGLE (FAISS Context Retrieval)
+        all_contexts = []
+
+        if mode == "compare" and all_report_data:
+            score, gaps = self.verify_patient_identity([r['patient_info'] for r in all_report_data])
+            if score < 85:
+                safety_block = f"### 🚨 Safety Block\nIdentity Mismatch detected ({score}% confidence). Gaps: {', '.join(gaps)}. Cross-report analysis is disabled for safety."
+                yield {"type": "metadata", "sources": "Safety Engine", "mode": mode}
+                yield {"type": "token", "content": safety_block}
+                yield {"type": "done", "sources": "Safety Engine"}
+                return
+
+        report_ids = report_ids or []
+        for rid in report_ids:
+            path = os.path.join(user_folder, f"report_{rid}")
+            if os.path.exists(path):
+                if path in self._index_cache:
+                    db = self._index_cache[path]
+                else:
+                    db = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+                    self._index_cache[path] = db
+
+                faiss_results = db.similarity_search_with_score(question, k=6)
+                faiss_docs = filter_by_l2_threshold(faiss_results, threshold=1.3, query=question)
+
+                bm25_docs = []
+                try:
+                    all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
+                    if all_chunks:
+                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25.k = 4
+                        bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
+                except Exception as bm_err:
+                    print(f"[BM25 WARNING] Fallback to FAISS: {bm_err}")
+
+                combined_docs = []
+                seen_content = set()
+                for doc in bm25_docs + faiss_docs:
+                    if doc.page_content not in seen_content:
+                        seen_content.add(doc.page_content)
+                        combined_docs.append(doc)
+
+                struct_summary = ""
+                if all_report_data:
+                    for rep in all_report_data:
+                        if rep.get("id") == rid and rep.get("extracted_values"):
+                            struct_summary = format_abnormal_findings(rep["extracted_values"])
+
+                report_text_block = "\n".join([d.page_content for d in combined_docs])
+                all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
+
+        context = "\n".join(all_contexts)
+        sources_str = f"Analyzed {len(report_ids)} active documents"
+
+        # Emit initial metadata with sources info
+        yield {
+            "type": "metadata",
+            "sources": sources_str,
+            "mode": mode,
+            "context_length": len(context)
+        }
+
+        prompt = ChatPromptTemplate.from_template("""
+        You are a Clinical Data Specialist. Answer based ONLY on the context below.
+        
+        CONTEXT:
+        {context}
+        
+        QUESTION:
+        {question}
+
+        STRICT CLINICAL PROTOCOL:
+        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
+        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
+        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
+        4. Answer in professional English.
+        """)
+
+        try:
+            chain = prompt | self.llm
+            for chunk in chain.stream({"context": context, "question": question}):
+                token = getattr(chunk, 'content', str(chunk))
+                if token:
+                    yield {"type": "token", "content": token}
+            yield {"type": "done", "sources": sources_str}
+        except GeneratorExit:
+            print("[RAG STREAM] Client disconnected; stream generator closed cleanly.")
+            return
+        except Exception as groq_err:
+            print(f"[RAG STREAM ERROR] Groq API error: {groq_err}")
+            fallback_findings = []
+            if all_report_data:
+                for rep in all_report_data:
+                    if rep.get("extracted_values"):
+                        formatted = format_abnormal_findings(rep["extracted_values"])
+                        if formatted:
+                            fallback_findings.append(formatted)
+            if fallback_findings:
+                fallback_msg = "⚠️ **[Groq API Offline Fallback] Direct Database Findings:**\n" + "\n".join(fallback_findings)
+            else:
+                fallback_msg = "⚠️ AI reasoning service is currently unavailable. Please try again shortly."
+            yield {"type": "token", "content": fallback_msg}
+            yield {"type": "error", "message": str(groq_err), "sources": sources_str}
+
+
     
 
     def extract_patient_metadata(self, text: str):
