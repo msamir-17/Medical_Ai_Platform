@@ -1,6 +1,5 @@
 ---
 title: Medical AI Backend
-emoji: 🏥
 colorFrom: indigo
 colorTo: blue
 sdk: docker
