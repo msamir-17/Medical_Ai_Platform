@@ -89,37 +89,68 @@ class RAGService:
 
         self._index_cache = {} 
         self._bm25_cache = OrderedDict()
-        self._max_bm25_cache_size = int(os.getenv("BM25_CACHE_MAX_SIZE", "500"))
-        self._index_lock = threading.Lock()
+        self._max_bm25_cache_size = int(os.getenv("BM25_CACHE_MAX_SIZE", "200"))
+        self._cache_lock = threading.Lock()
+        self._build_locks = {}
+        self._build_locks_guard = threading.Lock()
+        self._report_versions = {}
+        self._tombstones = set()
+        self._index_lock = self._cache_lock  # Backward compatibility alias
+
+    def _get_path_build_lock(self, path: str) -> threading.Lock:
+        """Retrieves or creates a dedicated fine-grained build lock for a specific report path."""
+        with self._build_locks_guard:
+            if path not in self._build_locks:
+                self._build_locks[path] = threading.Lock()
+            return self._build_locks[path]
 
     def _get_or_create_bm25(self, path: str, all_chunks: list) -> BM25Retriever:
         """
         Thread-safe, bounded LRU BM25 Index cache lookup and creation.
         Eliminates repeated tokenization and IDF rebuilding across all queries.
         """
-        # Fast-path read
-        if path in self._bm25_cache:
-            with self._index_lock:
-                if path in self._bm25_cache:
-                    self._bm25_cache.move_to_end(path)
-                    return self._bm25_cache[path]
-
-        # Slow-path: Cache miss with lock to prevent duplicate building
-        with self._index_lock:
-            if path in self._bm25_cache:
+        # 1. Fast-path read with microsecond LRU update
+        with self._cache_lock:
+            if path in self._bm25_cache and path not in self._tombstones:
                 self._bm25_cache.move_to_end(path)
                 return self._bm25_cache[path]
+            expected_version = self._report_versions.get(path, 0)
+        
 
+                
+
+
+
+        # 2. Acquire per-report fine-grained build lock (other reports build concurrently in parallel!)
+        report_lock = self._get_path_build_lock(path)
+        with report_lock:
+            with self._cache_lock:
+                if path in self._bm25_cache and path not in self._tombstones:
+                    self._bm25_cache.move_to_end(path)
+                    return self._bm25_cache[path]
+                if path in self._tombstones or self._report_versions.get(path, 0) != expected_version:
+                    transient_bm25 = BM25Retriever.from_documents(all_chunks)
+                    transient_bm25.k = 4
+                    return transient_bm25
+
+            # 3. CPU-bound BM25 construction runs OUTSIDE the global cache lock!
             bm25 = BM25Retriever.from_documents(all_chunks)
             bm25.k = 4
 
-            if len(self._bm25_cache) >= self._max_bm25_cache_size:
-                self._bm25_cache.popitem(last=False)  # Evict oldest LRU entry
+            # 4. Atomic cache commit guarded by generation counter and tombstone validation
+            with self._cache_lock:
+                current_version = self._report_versions.get(path, 0)
+                if current_version == expected_version and path not in self._tombstones:
+                    if len(self._bm25_cache) >= self._max_bm25_cache_size:
+                        self._bm25_cache.popitem(last=False)  # Evict oldest LRU entry
+                    self._bm25_cache[path] = bm25
+                    return bm25
+                else:
+                    return bm25
+            
 
-            self._bm25_cache[path] = bm25
-            return bm25
 
-    def invalidate_report_cache(self, user_id: str, report_id: str):
+    def invalidate_report_cache(self, user_id: str, report_id: str, is_deleted: bool = True):
         """
         Invalidates in-memory FAISS and BM25 caches for a specific report,
         and evicts the user's semantic cache namespace to prevent stale responses.
@@ -128,11 +159,26 @@ class RAGService:
         path = os.path.join(user_folder, f"report_{report_id}")
         master_path = os.path.join(user_folder, "master_index")
 
-        with self._index_lock:
+        with self._cache_lock:
             self._index_cache.pop(path, None)
             self._index_cache.pop(master_path, None)
             self._bm25_cache.pop(path, None)
             self._bm25_cache.pop(master_path, None)
+
+            # Advance version counters to invalidate any pending in-flight builds
+            self._report_versions[path] = self._report_versions.get(path, 0) + 1
+            self._report_versions[master_path] = self._report_versions.get(master_path, 0) + 1
+
+            if is_deleted:
+                self._tombstones.add(path)
+                self._tombstones.add(master_path)
+            else:
+                self._tombstones.discard(path)
+                self._tombstones.discard(master_path)
+
+        with self._build_locks_guard:
+            self._build_locks.pop(path, None)
+            self._build_locks.pop(master_path, None)
 
         try:
             semantic_cache.invalidate_user(user_id)
@@ -142,7 +188,7 @@ class RAGService:
 
     def index_report(self, text: str, user_id: str, report_id: str, extracted_metadata: dict = None):
         # Invalidate existing in-memory caches if this report was previously indexed
-        self.invalidate_report_cache(user_id, report_id)
+        self.invalidate_report_cache(user_id, report_id, is_deleted=False)
         if extracted_metadata is None:
             extracted_metadata = {}
 

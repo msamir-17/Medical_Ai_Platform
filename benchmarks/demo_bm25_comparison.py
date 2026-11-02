@@ -81,8 +81,10 @@ def run_bm25_benchmark():
     print(f"--- [2] AFTER (Cached): Reusing In-Memory BM25 Index via RAGService ({num_runs} runs) ---")
     
     # Reset RAGService cache for clean measure
-    with rag_service._index_lock:
+    with rag_service._cache_lock:
         rag_service._bm25_cache.clear()
+        rag_service._tombstones.clear()
+        rag_service._report_versions.clear()
 
     cached_total_times = []
     cached_lookup_times = []
