@@ -1,3 +1,5 @@
+import threading
+from collections import OrderedDict
 from app.services.semantic_cache_service import semantic_cache
 import asyncio
 import sys
@@ -86,9 +88,61 @@ class RAGService:
         )
 
         self._index_cache = {} 
+        self._bm25_cache = OrderedDict()
+        self._max_bm25_cache_size = int(os.getenv("BM25_CACHE_MAX_SIZE", "500"))
+        self._index_lock = threading.Lock()
+
+    def _get_or_create_bm25(self, path: str, all_chunks: list) -> BM25Retriever:
+        """
+        Thread-safe, bounded LRU BM25 Index cache lookup and creation.
+        Eliminates repeated tokenization and IDF rebuilding across all queries.
+        """
+        # Fast-path read
+        if path in self._bm25_cache:
+            with self._index_lock:
+                if path in self._bm25_cache:
+                    self._bm25_cache.move_to_end(path)
+                    return self._bm25_cache[path]
+
+        # Slow-path: Cache miss with lock to prevent duplicate building
+        with self._index_lock:
+            if path in self._bm25_cache:
+                self._bm25_cache.move_to_end(path)
+                return self._bm25_cache[path]
+
+            bm25 = BM25Retriever.from_documents(all_chunks)
+            bm25.k = 4
+
+            if len(self._bm25_cache) >= self._max_bm25_cache_size:
+                self._bm25_cache.popitem(last=False)  # Evict oldest LRU entry
+
+            self._bm25_cache[path] = bm25
+            return bm25
+
+    def invalidate_report_cache(self, user_id: str, report_id: str):
+        """
+        Invalidates in-memory FAISS and BM25 caches for a specific report,
+        and evicts the user's semantic cache namespace to prevent stale responses.
+        """
+        user_folder = os.path.join(self.vector_db_path, f"user_{user_id}")
+        path = os.path.join(user_folder, f"report_{report_id}")
+        master_path = os.path.join(user_folder, "master_index")
+
+        with self._index_lock:
+            self._index_cache.pop(path, None)
+            self._index_cache.pop(master_path, None)
+            self._bm25_cache.pop(path, None)
+            self._bm25_cache.pop(master_path, None)
+
+        try:
+            semantic_cache.invalidate_user(user_id)
+        except Exception:
+            pass
 
 
     def index_report(self, text: str, user_id: str, report_id: str, extracted_metadata: dict = None):
+        # Invalidate existing in-memory caches if this report was previously indexed
+        self.invalidate_report_cache(user_id, report_id)
         if extracted_metadata is None:
             extracted_metadata = {}
 
@@ -271,7 +325,7 @@ class RAGService:
                 try:
                     all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
                     if all_chunks:
-                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25 = self._get_or_create_bm25(path, all_chunks)
                         bm25.k = 4
                         bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
                 except Exception as bm_err:
@@ -423,7 +477,7 @@ class RAGService:
                 try:
                     all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
                     if all_chunks:
-                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25 = self._get_or_create_bm25(path, all_chunks)
                         bm25.k = 4
                         bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
                 except Exception as bm_err:
@@ -660,7 +714,7 @@ class RAGService:
                 try:
                     all_chunks = [doc for doc in db.docstore._dict.values()] if hasattr(db, 'docstore') else faiss_docs
                     if all_chunks:
-                        bm25 = BM25Retriever.from_documents(all_chunks)
+                        bm25 = self._get_or_create_bm25(path, all_chunks)
                         bm25.k = 4
                         bm25_docs = bm25.invoke(question) if hasattr(bm25, 'invoke') else bm25.get_relevant_documents(question)
                 except Exception as bm_err:

@@ -233,6 +233,8 @@ async def delete_report(
     try:
         db.delete(report)
         db.commit()
+
+        rag_service.invalidate_report_cache(current_user_id, report_id)
         return {"message": "Report deleted successfully"}
     except Exception as e:
         db.rollback()
