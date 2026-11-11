@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react'; // 1. Suspense import karein
+import { useEffect, useRef, useState, Suspense } from 'react'; // 1. Suspense import karein
 import { useSearchParams, useRouter } from 'next/navigation';
 import { authService } from '@/features/auth/authService';
 import { useAuthStore } from '@/store/authStore';
@@ -13,17 +13,34 @@ function VerifyEmailContent() {
   const setToken = useAuthStore((state) => state.setToken);
   const token = searchParams.get('token');
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const hasVerifiedRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (token) {
-      authService.verifyEmail(token)
-        .then((data) => {
-          setToken(data.access_token);
-          setStatus('success');
-          setTimeout(() => router.push('/dashboard'), 2000);
-        })
-        .catch(() => setStatus('error'));
+    if (!token) {
+      setStatus('error');
+      return;
     }
+
+    // Prevent duplicate verification calls in React Strict Mode on one-time tokens.
+    if (hasVerifiedRef.current) {
+      return;
+    }
+    hasVerifiedRef.current = true;
+
+    authService.verifyEmail(token)
+      .then((data) => {
+        setToken(data.access_token);
+        setStatus('success');
+        redirectTimerRef.current = setTimeout(() => router.push('/dashboard'), 2000);
+      })
+      .catch(() => setStatus('error'));
+
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
   }, [token, setToken, router]);
 
   return (
