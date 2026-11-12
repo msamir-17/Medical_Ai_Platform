@@ -9,6 +9,7 @@ pydantic[email]
 # --- Database ---
 sqlalchemy
 psycopg2-binary
+psycopg[binary]
 
 # --- Security & Auth ---
 passlib[bcrypt]
