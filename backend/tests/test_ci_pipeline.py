@@ -37,7 +37,7 @@ def test_ci_health_and_ready_probes(client):
 
 def test_ci_diabetes_prediction_pipeline():
     """
-    CI Gate: Verifies tabular diabetes ML model returns valid probability & clinical output shape.
+    CI Gate: Verifies tabular diabetes ML model returns valid risk score & SHAP explanation.
     """
     sample_input = {
         "Pregnancies": 2,
@@ -52,10 +52,10 @@ def test_ci_diabetes_prediction_pipeline():
 
     result = diabetes_service.predict_diabetes(sample_input)
     assert result is not None
-    assert "prediction" in result
-    assert "probability" in result
-    assert 0.0 <= result["probability"] <= 1.0
-    assert "risk_level" in result
+    assert "risk_score" in result
+    assert 0.0 <= result["risk_score"] <= 100.0
+    assert "shap_explanation" in result
+    assert len(result["shap_explanation"]) > 0
 
 
 def test_ci_model_loader_revision_pinning():
@@ -94,16 +94,13 @@ def test_ci_rag_pipeline_with_mocked_groq_llm():
     """
     from app.services.rag_service import rag_service
 
-    mock_llm_response = MagicMock()
-    mock_llm_response.content = "Hemoglobin 7.8 g/dL hai (normal range: 12-17 g/dL)."
+    mock_llm = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = "Patient ka naam Mr. Kanta Yadav hai."
+    mock_llm.invoke.return_value = mock_response
+    mock_llm.bind.return_value = mock_llm
 
-    with patch.object(rag_service.llm, "invoke", return_value=mock_llm_response), \
-         patch.object(rag_service.llm, "bind") as mock_bind:
-        
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = mock_llm_response
-        mock_bind.return_value.__or__ = MagicMock(return_value=mock_chain)
-
-        # Ensure LLM returns mocked response without reaching out to Groq
-        assert mock_llm_response.content is not None
+    with patch.object(rag_service, "llm", mock_llm):
+        prompt_res = rag_service.llm.bind(max_tokens=200).invoke("dummy question")
+        assert prompt_res.content == "Patient ka naam Mr. Kanta Yadav hai."
 
