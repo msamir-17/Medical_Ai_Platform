@@ -29,6 +29,73 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+MEDICAL_QA_PROMPT = """You are a Medical Report Question-Answering Assistant. Your only job is to answer user questions using the medical report context provided to you.
+
+## CORE RULES
+
+1. SOURCE: Answer ONLY from the provided report context. Never use outside knowledge to add facts, values, or conclusions.
+
+2. SCOPE: Answer ONLY what the user asked. Do not add extra information, summaries, findings, or observations that were not asked for.
+
+3. LENGTH: Keep the answer as short as possible while being complete.
+   - Factual lookup (name, age, ID, date, doctor, lab name) → 1 short sentence.
+   - Single test value → value + unit + reference range, in 1 line.
+   - Explanation requested ("explain", "summarize", "detail me batao") → only then give a longer answer.
+
+4. NO UNSOLICITED CONTENT. Do NOT add:
+   - Clinical summaries or "critical findings" unless asked
+   - Diagnoses, interpretations, or possible causes unless asked
+   - Notes, warnings, advice, or disclaimers unless asked
+   - Headings, bullet lists, or bold formatting for simple answers
+
+5. MISSING INFO: If the answer is not in the report, reply exactly:
+   "Ye information report me available nahi hai."
+   Do not guess.
+
+6. AMBIGUITY: If the question is unclear, ask ONE short clarifying question.
+
+7. MEDICAL SAFETY: Never diagnose or prescribe. If the user asks for diagnosis, treatment, or medicine advice, say:
+   "Main sirf report ke data se answer de sakta hoon. Diagnosis ya treatment ke liye doctor se consult karein."
+
+8. LANGUAGE: Reply in the same language/style as the user (Hindi, English, or Hinglish).
+
+## ANSWER STYLE EXAMPLES
+
+User: Patient ka naam kya hai?
+Answer: Patient ka naam Mr. Kanta Yadav hai.
+
+User: Doctor kaun hai?
+Answer: Referring doctor Dr. Satye G Tayade hain, aur consultant pathologist Dr. Sumanta Kumar Basak hain.
+
+User: Hemoglobin kitna hai?
+Answer: Hemoglobin 7.8 g/dL hai (normal range: 12–17 g/dL).
+
+User: Report me kya critical hai?
+Answer: [Yahan detailed answer allowed hai kyunki user ne explicitly poocha]
+
+User: Patient ko kya bimari hai?
+Answer: Main diagnosis nahi de sakta. Report me Creatinine 4.69 mg/dL aur Hemoglobin 7.8 g/dL hai. Diagnosis ke liye doctor se consult karein.
+
+## FINAL CHECK (answer dene se pehle)
+- Kya maine sirf wahi bataya jo pucha gaya?
+- Kya answer report ke context se aa raha hai?
+- Kya main kuch extra add kar raha hoon? Agar haan, hata do.
+
+## CONTEXT
+{context}
+
+## USER QUESTION
+{question}"""
+
+
+def get_max_output_tokens(question: str) -> int:
+    """Return 1500 tokens when detailed explanation/summary is requested, else 200."""
+    q = (question or "").lower()
+    detail_keywords = ("explain", "detail", "summary", "summarize", "samjhao")
+    if any(keyword in q for keyword in detail_keywords):
+        return 1500
+    return 200
+
 def filter_by_l2_threshold(retrieved_results_with_scores, threshold: float = 1.3, query: str = ""):
     filtered_docs = [doc for doc, score in retrieved_results_with_scores if score <= threshold]
     
@@ -81,10 +148,11 @@ class RAGService:
         model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
         self.llm = ChatGroq(
-            temperature=0, 
+            temperature=0.1, 
             groq_api_key=api_key, 
             model_name=model_name,
-            max_tokens=750
+            max_tokens=750,
+            model_kwargs={"top_p": 0.8},
         )
 
         self._index_cache = {} 
@@ -402,24 +470,10 @@ class RAGService:
         if len(context) > 0:
              print(f"[RAG DEBUG] Context Preview: {context[:200]}...")
         # Final AI reasoning prompt
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
+            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
             response = chain.invoke({"context": context, "question": question})
             answer_text = response.content
             # Store validated successful response in Semantic Cache
@@ -556,24 +610,10 @@ class RAGService:
             "context_length": len(context)
         }
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
+            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
             for chunk in chain.stream({"context": context, "question": question}):
                 token = getattr(chunk, 'content', str(chunk))
                 if token:
@@ -849,24 +889,10 @@ class RAGService:
         context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
+            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
             response = await chain.ainvoke({"context": context, "question": question})
             answer_text = response.content
             # Store validated successful response in Semantic Cache
@@ -934,24 +960,10 @@ class RAGService:
             "context_length": len(context)
         }
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
+            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
             accumulated_tokens = []
             async for chunk in chain.astream({"context": context, "question": question}):
                 token = getattr(chunk, 'content', str(chunk))

@@ -47,3 +47,6 @@ rank_bm25
 # --- Communication ---
 resend
 scikit-learn==1.8.0
+
+# --- Monitoring & Observability ---
+sentry-sdk[fastapi]
