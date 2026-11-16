@@ -6,16 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database URL load karein
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+# Database URL load karein (fallback to sqlite in CI/testing if not provided)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./test.db"
 
 # Engine create karein (Communication point with automatic reconnect pool)
+connect_args = {"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
+engine_kwargs = {"pool_pre_ping": True}
+if "sqlite" not in SQLALCHEMY_DATABASE_URL:
+    engine_kwargs.update({"pool_recycle": 300, "pool_size": 10, "max_overflow": 20})
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    pool_size=10,
-    max_overflow=20
+    connect_args=connect_args,
+    **engine_kwargs
 )
 
 # Connection session banayein
