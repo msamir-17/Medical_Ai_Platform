@@ -1,0 +1,51 @@
+name: RAG Golden Evaluation Suite
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  schedule:
+    - cron: '0 0 * * 0' # Automated weekly regression run (every Sunday midnight UTC)
+
+jobs:
+  rag-golden-eval:
+    name: Run RAG Golden Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --default-timeout=1000 --find-links https://download.pytorch.org/whl/cpu torch torchvision
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-mock
+
+      - name: Execute Golden Evaluation Suite
+        env:
+          PYTHONPATH: backend
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SECRET_KEY: "ci-secret-key-at-least-32-chars-long"
+          DATABASE_URL: "sqlite:///./eval_temp.db"
+        run: |
+          pytest backend/tests/test_rag_golden.py -v -s
+
+      - name: Upload Evaluation Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-golden-eval-results
+          path: backend/tests/rag_golden/last_eval_result.json
+          if-no-files-found: warn
+

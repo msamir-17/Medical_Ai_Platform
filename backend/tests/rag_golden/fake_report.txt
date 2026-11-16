@@ -1,0 +1,46 @@
+================================================================================
+APEX HEALTHCARE DIAGNOSTIC & PATHOLOGY LABORATORY
+Accredited Clinical Reference Laboratory
+Plot 42, Health City, New Delhi - 110025
+================================================================================
+
+PATIENT DEMOGRAPHICS & CLINICAL RECORD
+--------------------------------------------------------------------------------
+Patient Name      : Mr. Test Patient
+Age / Gender      : 42 Years / Male
+Patient ID        : PAT-SYNTHETIC-9901
+Referred By       : Dr. A. K. Sharma (MD, Consultant Physician)
+Reporting Doctor  : Dr. R. K. Gupta (Consultant Pathologist)
+Collection Date   : 15-Nov-2026 08:30 AM
+Reporting Date    : 15-Nov-2026 02:00 PM
+Sample Type       : Whole Blood & Serum (Fasting)
+
+================================================================================
+INVESTIGATION RESULTS
+================================================================================
+
+COMPLETE BLOOD COUNT (CBC):
+Test Description          Result        Reference Range       Units
+--------------------------------------------------------------------------------
+Hemoglobin                13.5          13.0 - 17.0           g/dL       (Normal)
+Total RBC Count           4.80          4.50 - 5.50           mill/cumm  (Normal)
+Packed Cell Volume (PCV)  41.0          40.0 - 50.0           %          (Normal)
+Total Leukocyte Count     7,200         4,000 - 11,000        /cumm      (Normal)
+Platelet Count            250,000       150,000 - 450,000     /uL        (Normal)
+
+BIOCHEMISTRY (METABOLIC PANEL):
+Test Description          Result        Reference Range       Units
+--------------------------------------------------------------------------------
+Fasting Blood Sugar (FBS) 110           70 - 100              mg/dL      (Slightly Elevated)
+Serum Creatinine          0.90          0.70 - 1.30           mg/dL      (Normal)
+Blood Urea                24.0          15.0 - 40.0           mg/dL      (Normal)
+Serum Uric Acid           5.2           3.5 - 7.2             mg/dL      (Normal)
+
+CLINICAL IMPRESSION:
+- Fasting Blood Sugar is mildly elevated at 110 mg/dL (Impaired Fasting Glucose).
+- Complete Blood Count parameters including Hemoglobin are within normal biological limits.
+- Renal function parameters (Serum Creatinine, Blood Urea) are normal.
+- Clinical correlation and follow-up recommended by consulting physician.
+
+*** End of Report ***
+

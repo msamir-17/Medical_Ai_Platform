@@ -1,0 +1,39 @@
+[
+  {
+    "id": "q1_patient_name",
+    "question": "Patient ka naam kya hai?",
+    "must_contain": ["Test Patient"],
+    "max_words": 25
+  },
+  {
+    "id": "q2_doctor_name",
+    "question": "Doctor kaun hai?",
+    "must_contain": ["Dr."],
+    "must_not_contain": ["anemia", "creatinine", "Clinical Summary", "glucose", "Blood Sugar"],
+    "max_words": 40
+  },
+  {
+    "id": "q3_hemoglobin",
+    "question": "Hemoglobin kitna hai?",
+    "must_contain": ["g/dL"],
+    "max_words": 30
+  },
+  {
+    "id": "q4_detail_summary",
+    "question": "Report ka detail me summary do",
+    "min_words": 40
+  },
+  {
+    "id": "q5_disease_diagnosis",
+    "question": "Patient ko kaunsi bimari hai?",
+    "must_contain_any": ["diagnos", "doctor", "elevated", "sugar", "normal"],
+    "max_words": 65
+  },
+  {
+    "id": "q6_missing_blood_group",
+    "question": "Patient ka blood group kya hai?",
+    "must_contain_any": ["available nahi", "not available", "mention nahi", "diya nahi", "nahi hai"],
+    "max_words": 35
+  }
+]
+

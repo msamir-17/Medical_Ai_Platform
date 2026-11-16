@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-11-16T14:55:26.096851Z",
+  "prompt_version": "v2.0.0",
+  "total_cases": 6,
+  "passed_cases": 6,
+  "pass_rate_percentage": 100.0,
+  "results": [
+    {
+      "id": "q1_patient_name",
+      "question": "Patient ka naam kya hai?",
+      "answer": "Patient ka naam Mr. Test Patient hai.",
+      "word_count": 7,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 0.94
+    },
+    {
+      "id": "q2_doctor_name",
+      "question": "Doctor kaun hai?",
+      "answer": "Referring doctor Dr. A. K. Sharma hain, aur pathologist Dr. R. K. Gupta hain.",
+      "word_count": 14,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 0.29
+    },
+    {
+      "id": "q3_hemoglobin",
+      "question": "Hemoglobin kitna hai?",
+      "answer": "Hemoglobin 13.5 g/dL hai (normal range: 13.0\u201317.0 g/dL).",
+      "word_count": 8,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 0.35
+    },
+    {
+      "id": "q4_detail_summary",
+      "question": "Report ka detail me summary do",
+      "answer": "Yahan report ka detailed summary hai:\n\n**Patient Details:**\n*   **Naam:** Mr. Test Patient\n*   **Age/Gender:** 42 saal / Male\n*   **Patient ID:** PAT-SYNTHETIC-9901\n*   **Referring Doctor:** Dr. A. K. Sharma (MD, Consultant Physician)\n*   **Reporting Doctor:** Dr. R. K. Gupta (Consultant_pathologist)\n*   **Sample Type:** Whole Blood & Serum (F fasting)\n*   **Collection Date:** 15-Nov-2026\n\n**Investigation Results:**\n\n1.  **Biochemistry (Metabolic Panel):**\n    *   **FBS (FBS):** 110.00 (Slightly Elevated)\n    *   **Serum Creatinine:** 0.90 (0.70 - 1.30) (0.70 - 1.30)\n    *   **Blood Urea:** 24.0 (15.0 - 40.0) (15.0 - 40.0)\n    *   **Serum Uric Acid:** 5.2 (3.5 - 7.2) (3.5 - 7.2)\n\n2.  **Complete Blood Count (CBC):**\n    *   **Hemoglobin:** 13.5 (13.0 - 17.0) (13.0 - 17.0)\n    *   **Total RBC Count:** 4.80 (4.50 - 5.50) (4.50 - 5.50)\n    *   **Packed Cell Volume (PCV):** 41.0 (40.0 - 50.0) (40.0 - 50.0)\n    *   **Total Leukocyte Count:** 7,200 (4,000 - 11,000) (4,000 - 11,000)\n    *   **Platelet Count:** 250,000 (150,000 - 450,000) (150,000 - 450,000)\n\n**Clinical Impression:**\n*   Fasting Blood Sugar is mildly elevated at 110 mg/dL (Impaired Fasting Glucose).\n*   Complete Blood Count parameters including Hemoglobin are within normal biological limits.\n*   Renal function parameters (Serum Creatinine, Blood Urea) are normal.\n*   Clinical correlation and follow-up recommended by consulting physician.",
+      "word_count": 201,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 1.68
+    },
+    {
+      "id": "q5_disease_diagnosis",
+      "question": "Patient ko kaunsi bimari hai?",
+      "answer": "Main diagnosis nahi de sakta. Report me Fasting Blood Sugar 110 mg/dL slightly elevated hai. Diagnosis aur treatment ke liye doctor se consult karein.",
+      "word_count": 24,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 0.8
+    },
+    {
+      "id": "q6_missing_blood_group",
+      "question": "Patient ka blood group kya hai?",
+      "answer": "Ye information report me available nahi hai.",
+      "word_count": 7,
+      "passed": true,
+      "errors": [],
+      "latency_seconds": 0.23
+    }
+  ]
+}
