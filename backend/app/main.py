@@ -1,5 +1,8 @@
 import os
 import sys
+import time
+import uuid
+from typing import Optional
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -8,13 +11,15 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Response, Request, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.database import engine, Base
 from app.models import user  # Import your models
 from app.models import report
 from app.routers import diabetes_routes, report_routes , chat_routes , auth_routes 
+from app.utils.logger import logger, get_user_hash
+from app.utils.metrics import get_metrics_data, CONTENT_TYPE_LATEST 
 
 # --- Sentry & Privacy Scrubber Configuration (MLOPS_PLAN Phase 1) ---
 try:
@@ -110,6 +115,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 2.1 Structured Logging & X-Request-ID Middleware (MLOPS_PLAN Phase 2)
+@app.middleware("http")
+async def add_request_id_and_access_log(request: Request, call_next):
+    """
+    Structured Logging & Distributed Tracing Middleware:
+    Injects unique X-Request-ID and outputs single-line JSON log for every request.
+    """
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    start_time = time.perf_counter()
+
+    response = await call_next(request)
+
+    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+
+    # Mask user identifier with SHA-256 salt (zero PII written to logs)
+    user_hash = get_user_hash(getattr(request.state, "user_id", None))
+
+    log_extra = {
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": response.status_code,
+        "latency_ms": latency_ms,
+        "user_hash": user_hash,
+    }
+    logger.info(f"{request.method} {request.url.path} {response.status_code} in {latency_ms}ms", extra=log_extra)
+
+    return response
+
 app.include_router(auth_routes.router, prefix="/auth", tags=["Authentication"])
 app.include_router(diabetes_routes.router, prefix="/predict", tags=["Diabetes"])
 app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])
@@ -182,7 +217,29 @@ def sentry_test_endpoint():
         }
     raise RuntimeError("MediAI Sentry Verification: Controlled test alert triggered successfully.")
 
-# 6. Root Endpoint
+# 6. Prometheus Metrics Endpoint (MLOPS_PLAN Phase 2)
+@app.get("/metrics")
+def metrics_endpoint(
+    x_metrics_token: Optional[str] = Header(None, alias="X-Metrics-Token"),
+    token: Optional[str] = None
+):
+    """
+    Production Prometheus Metrics Endpoint (MLOPS_PLAN Phase 2):
+    Exposes application and RAG runtime telemetry.
+    Protected by METRICS_TOKEN to prevent unauthorized public scraping.
+    """
+    expected_token = os.getenv("METRICS_TOKEN")
+    if expected_token:
+        provided = x_metrics_token or token
+        if provided != expected_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing metrics token"
+            )
+
+    return Response(content=get_metrics_data(), media_type=CONTENT_TYPE_LATEST)
+
+# 7. Root Endpoint
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Medical AI Platform API"}

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.diabetes_service import diabetes_service
+from app.utils.metrics import track_model_predict_time
 
 router = APIRouter()
 
@@ -18,8 +19,9 @@ class DiabetesInput(BaseModel):
 @router.post("/diabetes")
 async def predict_diabetes(data: DiabetesInput):
     try:
-        # Pydantic data ko dict mein badal kar service ko bhej do
-        result = diabetes_service.predict_diabetes(data.model_dump())
+        # Pydantic data ko dict mein badal kar service ko bhej do (track inference latency)
+        with track_model_predict_time("diabetes"):
+            result = diabetes_service.predict_diabetes(data.model_dump())
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

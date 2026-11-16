@@ -1,6 +1,20 @@
 import threading
 from collections import OrderedDict
 from app.services.semantic_cache_service import semantic_cache
+from app.utils.metrics import (
+    RAG_REQUEST_TOTAL,
+    RAG_RETRIEVAL_LATENCY_SECONDS,
+    RAG_LLM_LATENCY_SECONDS,
+    RAG_TTFT_SECONDS,
+    GROQ_RATE_LIMIT_TOTAL,
+    SEMANTIC_CACHE_HIT_TOTAL,
+    SEMANTIC_CACHE_MISS_TOTAL,
+    BM25_CACHE_HIT_TOTAL,
+    BM25_CACHE_MISS_TOTAL,
+    RAG_FALLBACK_TOTAL,
+    track_retrieval_time,
+    track_llm_time,
+)
 import asyncio
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -181,7 +195,9 @@ class RAGService:
         with self._cache_lock:
             if path in self._bm25_cache and path not in self._tombstones:
                 self._bm25_cache.move_to_end(path)
+                BM25_CACHE_HIT_TOTAL.inc()
                 return self._bm25_cache[path]
+            BM25_CACHE_MISS_TOTAL.inc()
             expected_version = self._report_versions.get(path, 0)
         
 
@@ -410,9 +426,13 @@ class RAGService:
         query_emb = self.embeddings.embed_query(question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             return cached_resp
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
         # Context build karein sirf Database ki active IDs ke liye
+        t_ret_start = time.perf_counter()
         for rid in report_ids:
             path = os.path.join(user_folder, f"report_{rid}")
             print("RID:", rid)
@@ -465,6 +485,7 @@ class RAGService:
                 report_text_block = "\n".join([d.page_content for d in combined_docs])
                 all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
 
+        RAG_RETRIEVAL_LATENCY_SECONDS.observe(time.perf_counter() - t_ret_start)
         context = "\n".join(all_contexts)
         print(f"[RAG DEBUG] Final Context Length: {len(context)}")
         if len(context) > 0:
@@ -473,13 +494,19 @@ class RAGService:
         prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
-            response = chain.invoke({"context": context, "question": question})
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                response = chain.invoke({"context": context, "question": question})
             answer_text = response.content
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             # Store validated successful response in Semantic Cache
             semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": f"Analyzed {len(report_ids)} active documents"}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
             print(f"[RAG ERROR] Groq API timeout/failure: {groq_err}")
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -599,6 +626,7 @@ class RAGService:
                 report_text_block = "\n".join([d.page_content for d in combined_docs])
                 all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
 
+        RAG_RETRIEVAL_LATENCY_SECONDS.observe(time.perf_counter() - t_ret_start)
         context = "\n".join(all_contexts)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
@@ -612,18 +640,30 @@ class RAGService:
 
         prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
+        stream_start = time.perf_counter()
+        first_token_recorded = False
+
         try:
-            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
-            for chunk in chain.stream({"context": context, "question": question}):
-                token = getattr(chunk, 'content', str(chunk))
-                if token:
-                    yield {"type": "token", "content": token}
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                for chunk in chain.stream({"context": context, "question": question}):
+                    token = getattr(chunk, 'content', str(chunk))
+                    if token:
+                        if not first_token_recorded:
+                            RAG_TTFT_SECONDS.observe(time.perf_counter() - stream_start)
+                            first_token_recorded = True
+                        yield {"type": "token", "content": token}
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             yield {"type": "done", "sources": sources_str}
         except GeneratorExit:
             print("[RAG STREAM] Client disconnected; stream generator closed cleanly.")
             return
         except Exception as groq_err:
             print(f"[RAG STREAM ERROR] Groq API error: {groq_err}")
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -884,20 +924,30 @@ class RAGService:
         query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             return cached_resp
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
-        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        with track_retrieval_time():
+            context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
         prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
-            response = await chain.ainvoke({"context": context, "question": question})
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                response = await chain.ainvoke({"context": context, "question": question})
             answer_text = response.content
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             # Store validated successful response in Semantic Cache
             semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -936,6 +986,8 @@ class RAGService:
         query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             yield {
                 "type": "metadata",
                 "sources": cached_resp.get("sources", "Semantic Cache"),
@@ -949,8 +1001,10 @@ class RAGService:
                 yield {"type": "token", "content": w + (" " if i < len(words) - 1 else "")}
             yield {"type": "done", "sources": cached_resp.get("sources", "Semantic Cache"), "cache_hit": True}
             return
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
-        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        with track_retrieval_time():
+            context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
         yield {
@@ -962,15 +1016,23 @@ class RAGService:
 
         prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
+        stream_start = time.perf_counter()
+        first_token_recorded = False
+
         try:
-            chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
-            accumulated_tokens = []
-            async for chunk in chain.astream({"context": context, "question": question}):
-                token = getattr(chunk, 'content', str(chunk))
-                if token:
-                    accumulated_tokens.append(token)
-                    yield {"type": "token", "content": token}
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                accumulated_tokens = []
+                async for chunk in chain.astream({"context": context, "question": question}):
+                    token = getattr(chunk, 'content', str(chunk))
+                    if token:
+                        if not first_token_recorded:
+                            RAG_TTFT_SECONDS.observe(time.perf_counter() - stream_start)
+                            first_token_recorded = True
+                        accumulated_tokens.append(token)
+                        yield {"type": "token", "content": token}
             
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             full_answer = "".join(accumulated_tokens)
             if full_answer:
                 semantic_cache.put(question, query_emb, {"answer": full_answer, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
@@ -979,6 +1041,10 @@ class RAGService:
         except GeneratorExit:
             return
         except Exception as groq_err:
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:

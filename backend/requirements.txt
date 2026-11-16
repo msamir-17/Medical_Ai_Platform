@@ -50,3 +50,4 @@ scikit-learn==1.8.0
 
 # --- Monitoring & Observability ---
 sentry-sdk[fastapi]
+prometheus-client
