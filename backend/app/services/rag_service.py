@@ -1,6 +1,20 @@
 import threading
 from collections import OrderedDict
 from app.services.semantic_cache_service import semantic_cache
+from app.utils.metrics import (
+    RAG_REQUEST_TOTAL,
+    RAG_RETRIEVAL_LATENCY_SECONDS,
+    RAG_LLM_LATENCY_SECONDS,
+    RAG_TTFT_SECONDS,
+    GROQ_RATE_LIMIT_TOTAL,
+    SEMANTIC_CACHE_HIT_TOTAL,
+    SEMANTIC_CACHE_MISS_TOTAL,
+    BM25_CACHE_HIT_TOTAL,
+    BM25_CACHE_MISS_TOTAL,
+    RAG_FALLBACK_TOTAL,
+    track_retrieval_time,
+    track_llm_time,
+)
 import asyncio
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -28,6 +42,73 @@ import re
 from dotenv import load_dotenv
 
 load_dotenv()
+
+MEDICAL_QA_PROMPT = """You are a Medical Report Question-Answering Assistant. Your only job is to answer user questions using the medical report context provided to you.
+
+## CORE RULES
+
+1. SOURCE: Answer ONLY from the provided report context. Never use outside knowledge to add facts, values, or conclusions.
+
+2. SCOPE: Answer ONLY what the user asked. Do not add extra information, summaries, findings, or observations that were not asked for.
+
+3. LENGTH: Keep the answer as short as possible while being complete.
+   - Factual lookup (name, age, ID, date, doctor, lab name) → 1 short sentence.
+   - Single test value → value + unit + reference range, in 1 line.
+   - Explanation requested ("explain", "summarize", "detail me batao") → only then give a longer answer.
+
+4. NO UNSOLICITED CONTENT. Do NOT add:
+   - Clinical summaries or "critical findings" unless asked
+   - Diagnoses, interpretations, or possible causes unless asked
+   - Notes, warnings, advice, or disclaimers unless asked
+   - Headings, bullet lists, or bold formatting for simple answers
+
+5. MISSING INFO: If the answer is not in the report, reply exactly:
+   "Ye information report me available nahi hai."
+   Do not guess.
+
+6. AMBIGUITY: If the question is unclear, ask ONE short clarifying question.
+
+7. MEDICAL SAFETY: Never diagnose or prescribe. If the user asks for diagnosis, treatment, or medicine advice, say:
+   "Main sirf report ke data se answer de sakta hoon. Diagnosis ya treatment ke liye doctor se consult karein."
+
+8. LANGUAGE: Reply in the same language/style as the user (Hindi, English, or Hinglish).
+
+## ANSWER STYLE EXAMPLES
+
+User: Patient ka naam kya hai?
+Answer: Patient ka naam Mr. Kanta Yadav hai.
+
+User: Doctor kaun hai?
+Answer: Referring doctor Dr. Satye G Tayade hain, aur consultant pathologist Dr. Sumanta Kumar Basak hain.
+
+User: Hemoglobin kitna hai?
+Answer: Hemoglobin 7.8 g/dL hai (normal range: 12–17 g/dL).
+
+User: Report me kya critical hai?
+Answer: [Yahan detailed answer allowed hai kyunki user ne explicitly poocha]
+
+User: Patient ko kya bimari hai?
+Answer: Main diagnosis nahi de sakta. Report me Creatinine 4.69 mg/dL aur Hemoglobin 7.8 g/dL hai. Diagnosis ke liye doctor se consult karein.
+
+## FINAL CHECK (answer dene se pehle)
+- Kya maine sirf wahi bataya jo pucha gaya?
+- Kya answer report ke context se aa raha hai?
+- Kya main kuch extra add kar raha hoon? Agar haan, hata do.
+
+## CONTEXT
+{context}
+
+## USER QUESTION
+{question}"""
+
+
+def get_max_output_tokens(question: str) -> int:
+    """Return 1500 tokens when detailed explanation/summary is requested, else 200."""
+    q = (question or "").lower()
+    detail_keywords = ("explain", "detail", "summary", "summarize", "samjhao")
+    if any(keyword in q for keyword in detail_keywords):
+        return 1500
+    return 200
 
 def filter_by_l2_threshold(retrieved_results_with_scores, threshold: float = 1.3, query: str = ""):
     filtered_docs = [doc for doc, score in retrieved_results_with_scores if score <= threshold]
@@ -81,10 +162,11 @@ class RAGService:
         model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
         self.llm = ChatGroq(
-            temperature=0, 
+            temperature=0.1, 
             groq_api_key=api_key, 
             model_name=model_name,
-            max_tokens=750
+            max_tokens=750,
+            model_kwargs={"top_p": 0.8},
         )
 
         self._index_cache = {} 
@@ -113,7 +195,9 @@ class RAGService:
         with self._cache_lock:
             if path in self._bm25_cache and path not in self._tombstones:
                 self._bm25_cache.move_to_end(path)
+                BM25_CACHE_HIT_TOTAL.inc()
                 return self._bm25_cache[path]
+            BM25_CACHE_MISS_TOTAL.inc()
             expected_version = self._report_versions.get(path, 0)
         
 
@@ -342,9 +426,13 @@ class RAGService:
         query_emb = self.embeddings.embed_query(question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             return cached_resp
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
         # Context build karein sirf Database ki active IDs ke liye
+        t_ret_start = time.perf_counter()
         for rid in report_ids:
             path = os.path.join(user_folder, f"report_{rid}")
             print("RID:", rid)
@@ -397,35 +485,28 @@ class RAGService:
                 report_text_block = "\n".join([d.page_content for d in combined_docs])
                 all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
 
+        RAG_RETRIEVAL_LATENCY_SECONDS.observe(time.perf_counter() - t_ret_start)
         context = "\n".join(all_contexts)
         print(f"[RAG DEBUG] Final Context Length: {len(context)}")
         if len(context) > 0:
              print(f"[RAG DEBUG] Context Preview: {context[:200]}...")
         # Final AI reasoning prompt
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
-            response = chain.invoke({"context": context, "question": question})
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                response = chain.invoke({"context": context, "question": question})
             answer_text = response.content
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             # Store validated successful response in Semantic Cache
             semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": f"Analyzed {len(report_ids)} active documents"}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
             print(f"[RAG ERROR] Groq API timeout/failure: {groq_err}")
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -545,6 +626,7 @@ class RAGService:
                 report_text_block = "\n".join([d.page_content for d in combined_docs])
                 all_contexts.append(f"\n=== SOURCE REPORT: {rid[:8]} ===\n{struct_summary}\n--- EXTRACTED REPORT CONTEXT ---\n" + report_text_block)
 
+        RAG_RETRIEVAL_LATENCY_SECONDS.observe(time.perf_counter() - t_ret_start)
         context = "\n".join(all_contexts)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
@@ -556,34 +638,32 @@ class RAGService:
             "context_length": len(context)
         }
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        stream_start = time.perf_counter()
+        first_token_recorded = False
 
         try:
-            chain = prompt | self.llm
-            for chunk in chain.stream({"context": context, "question": question}):
-                token = getattr(chunk, 'content', str(chunk))
-                if token:
-                    yield {"type": "token", "content": token}
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                for chunk in chain.stream({"context": context, "question": question}):
+                    token = getattr(chunk, 'content', str(chunk))
+                    if token:
+                        if not first_token_recorded:
+                            RAG_TTFT_SECONDS.observe(time.perf_counter() - stream_start)
+                            first_token_recorded = True
+                        yield {"type": "token", "content": token}
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             yield {"type": "done", "sources": sources_str}
         except GeneratorExit:
             print("[RAG STREAM] Client disconnected; stream generator closed cleanly.")
             return
         except Exception as groq_err:
             print(f"[RAG STREAM ERROR] Groq API error: {groq_err}")
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -844,34 +924,30 @@ class RAGService:
         query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             return cached_resp
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
-        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        with track_retrieval_time():
+            context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
-
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
         try:
-            chain = prompt | self.llm
-            response = await chain.ainvoke({"context": context, "question": question})
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                response = await chain.ainvoke({"context": context, "question": question})
             answer_text = response.content
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             # Store validated successful response in Semantic Cache
             semantic_cache.put(question, query_emb, {"answer": answer_text, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
         except Exception as groq_err:
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
@@ -910,6 +986,8 @@ class RAGService:
         query_emb = await asyncio.to_thread(self.embeddings.embed_query, question)
         cached_resp = semantic_cache.get(query_emb, user_id=user_id, mode=mode, report_ids=report_ids)
         if cached_resp:
+            SEMANTIC_CACHE_HIT_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             yield {
                 "type": "metadata",
                 "sources": cached_resp.get("sources", "Semantic Cache"),
@@ -923,8 +1001,10 @@ class RAGService:
                 yield {"type": "token", "content": w + (" " if i < len(words) - 1 else "")}
             yield {"type": "done", "sources": cached_resp.get("sources", "Semantic Cache"), "cache_hit": True}
             return
+        SEMANTIC_CACHE_MISS_TOTAL.inc()
 
-        context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
+        with track_retrieval_time():
+            context = await self._parallel_retrieve_contexts(report_ids, user_folder, question, all_report_data)
         sources_str = f"Analyzed {len(report_ids)} active documents"
 
         yield {
@@ -934,31 +1014,25 @@ class RAGService:
             "context_length": len(context)
         }
 
-        prompt = ChatPromptTemplate.from_template("""
-        You are a Clinical Data Specialist. Answer based ONLY on the context below.
-        
-        CONTEXT:
-        {context}
-        
-        QUESTION:
-        {question}
+        prompt = ChatPromptTemplate.from_template(MEDICAL_QA_PROMPT)
 
-        STRICT CLINICAL PROTOCOL:
-        1. Never compare different markers (e.g. Glucose vs Hemoglobin).
-        2. Analyze ALL lab sections provided (CBC, KFT/Renal, Urine, ABG).
-        3. Clearly highlight critical abnormalities (e.g. Severe Anemia, High Creatinine/BUN, Hyperkalemia).
-        4. Answer in professional English.
-        """)
+        stream_start = time.perf_counter()
+        first_token_recorded = False
 
         try:
-            chain = prompt | self.llm
-            accumulated_tokens = []
-            async for chunk in chain.astream({"context": context, "question": question}):
-                token = getattr(chunk, 'content', str(chunk))
-                if token:
-                    accumulated_tokens.append(token)
-                    yield {"type": "token", "content": token}
+            with track_llm_time():
+                chain = prompt | self.llm.bind(max_tokens=get_max_output_tokens(question))
+                accumulated_tokens = []
+                async for chunk in chain.astream({"context": context, "question": question}):
+                    token = getattr(chunk, 'content', str(chunk))
+                    if token:
+                        if not first_token_recorded:
+                            RAG_TTFT_SECONDS.observe(time.perf_counter() - stream_start)
+                            first_token_recorded = True
+                        accumulated_tokens.append(token)
+                        yield {"type": "token", "content": token}
             
+            RAG_REQUEST_TOTAL.labels(status="success").inc()
             full_answer = "".join(accumulated_tokens)
             if full_answer:
                 semantic_cache.put(question, query_emb, {"answer": full_answer, "sources": sources_str}, user_id=user_id, mode=mode, report_ids=report_ids)
@@ -967,6 +1041,10 @@ class RAGService:
         except GeneratorExit:
             return
         except Exception as groq_err:
+            if "429" in str(groq_err) or "rate limit" in str(groq_err).lower():
+                GROQ_RATE_LIMIT_TOTAL.inc()
+            RAG_FALLBACK_TOTAL.inc()
+            RAG_REQUEST_TOTAL.labels(status="fallback").inc()
             fallback_findings = []
             if all_report_data:
                 for rep in all_report_data:
