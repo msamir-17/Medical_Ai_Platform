@@ -2,21 +2,25 @@ import os
 import joblib
 from huggingface_hub import hf_hub_download
 
-# Define your Model Registry ID
+# Define your Model Registry ID and default pinned revision
 MODEL_REPO = "samirk10/medical-ai-models"
+MODEL_REVISION = os.getenv("MODEL_REVISION", "main")
 
-def load_model_from_hub(filename: str):
+def load_model_from_hub(filename: str, revision: str = None):
     """
     Downloads model from HF Hub if not cached, then loads it with joblib.
+    Supports pinned revisions/tags/commits for reproducible deployments (MLOPS_PLAN Phase 3).
     """
     token = os.getenv("HF_TOKEN")
+    rev = revision or MODEL_REVISION
     
-    print(f"[Model Loader] Fetching {filename} from {MODEL_REPO}...")
+    print(f"[Model Loader] Fetching {filename} from {MODEL_REPO} (revision: {rev})...")
     
     model_path = hf_hub_download(
         repo_id=MODEL_REPO,
         filename=filename,
-        token=token # Required for private repos
+        token=token, # Required for private repos
+        revision=rev
     )
     
     return joblib.load(model_path)
