@@ -31,11 +31,23 @@ def load_model_from_hub(filename: str, revision: str = None):
     
     print(f"[Model Loader] Fetching {filename} from {MODEL_REPO} (revision: {rev})...")
     
-    model_path = hf_hub_download(
-        repo_id=MODEL_REPO,
-        filename=filename,
-        token=token, # Required for private repos
-        revision=rev
-    )
+    try:
+        model_path = hf_hub_download(
+            repo_id=MODEL_REPO,
+            filename=filename,
+            token=token, # Required for private repos
+            revision=rev
+        )
+    except Exception as e:
+        if filename == "scaler_diabetes.pkl":
+            print(f"[Model Loader] scaler_diabetes.pkl not found on Hub, attempting fallback to scaler.pkl...")
+            model_path = hf_hub_download(
+                repo_id=MODEL_REPO,
+                filename="scaler.pkl",
+                token=token,
+                revision=rev
+            )
+        else:
+            raise e
     
     return joblib.load(model_path)

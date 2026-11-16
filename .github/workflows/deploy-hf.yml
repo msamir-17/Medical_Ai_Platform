@@ -38,11 +38,10 @@ jobs:
       - name: Run Pytest CI Test Suite
         env:
           PYTHONPATH: backend
-          HF_HUB_OFFLINE: "1"
-          TRANSFORMERS_OFFLINE: "1"
           SECRET_KEY: "ci-secret-key-at-least-32-chars-long"
           GROQ_API_KEY: "ci_mock_groq_api_key"
           DATABASE_URL: "sqlite:///./ci_test.db"
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           pytest backend/tests/test_ci_pipeline.py backend/tests/test_health_ready.py backend/tests/test_metrics_logging.py -v
 
